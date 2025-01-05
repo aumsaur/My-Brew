@@ -8,7 +8,7 @@ import { useGLTF } from "@react-three/drei";
 
 const _modelPath = "./models/demo-espresso-machine.glb";
 
-export function EspressoMachine(props) {
+export default function EspressoMachine(props) {
   const { nodes, materials } = useGLTF(_modelPath);
   return (
     <group {...props} dispose={null}>

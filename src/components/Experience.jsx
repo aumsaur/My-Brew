@@ -1,19 +1,20 @@
-import {
-  Cylinder,
-  MeshReflectorMaterial,
-  OrbitControls,
-} from "@react-three/drei";
-import { CylinderCollider, RigidBody } from "@react-three/rapier";
-import { Box } from "@react-three/drei";
-import { BoxGeometry } from "three";
-import { EspressoMachine } from "./models/EspressoMachine";
+import { MeshReflectorMaterial, OrbitControls } from "@react-three/drei";
+import Studio from "./Studio";
 
 export default function Experience() {
-  const dimensionScale = 2.5;
-
   return (
     <>
-      <OrbitControls />
+      <OrbitControls
+        // ref={controlsRef}
+        maxPolarAngle={Math.PI / 2}
+        minPolarAngle={Math.PI / 4}
+        minDistance={10}
+        maxDistance={20}
+        enableDamping
+        dampingFactor={0.1}
+      />
+
+      <fog attach={"fog"} args={["#dbecfb", 45, 50]} />
 
       {/* LIGHTS */}
       <ambientLight intensity={1} />
@@ -24,6 +25,7 @@ export default function Experience() {
         castShadow
       />
 
+      {/* GROUND */}
       <mesh position={[0, -1, 0]} rotation={[-Math.PI / 2, 0, 0]}>
         <circleGeometry args={[50, 50]} />
         <MeshReflectorMaterial
@@ -39,19 +41,7 @@ export default function Experience() {
         />
       </mesh>
 
-      {/* BACKGROUND */}
-      <EspressoMachine
-        scale={[dimensionScale, dimensionScale, dimensionScale]}
-        position={[0, dimensionScale, 0]}
-      />
-
-      {/* STATION */}
-      <RigidBody colliders={false} type="fixed" position-y={-0.5}>
-        <CylinderCollider args={[0.5, 5]} />
-        <Cylinder scale={[5, 1, 5]} receiveShadow>
-          <meshStandardMaterial color={"white"} />
-        </Cylinder>
-      </RigidBody>
+      <Studio />
     </>
   );
 }
