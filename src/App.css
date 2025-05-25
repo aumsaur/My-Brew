@@ -1,49 +1,111 @@
+@reference "tailwindcss";
+
 #root {
-  /* max-width: 1280px; */
-  /* margin: 0 auto; */
-  /* padding: 2rem; */
-  width: 100vw;
-  height: 100vh;
+  max-width: 100%;
+  margin: 0 0;
   text-align: center;
 }
 
-body,
-html {
-  margin: 0;
+/* main {
+  max-width: 100dvw;
+  max-height: 100dvh;
+  margin: auto 0;
+} */
+
+#overlay-menu {
+  align-items: center;
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  padding: 70px;
+  position: absolute;
+  transition: left 0.9s cubic-bezier(0.6, 0, 0.4, 1),
+    right 0.9s cubic-bezier(0.6, 0, 0.4, 1);
+  top: 0;
+  width: 100%;
+  /* @apply w-full sm:w-[400px]; */
 }
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
+#overlay-menu.show {
+  right: 0;
 }
 
-@keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
+#overlay-menu.hide {
+  right: 100%;
+  /* @apply right-full sm:right-[-400px]; */
+}
+
+#overlay-menu nav {
+  position: relative;
+  height: 100%;
+  width: 100%;
+}
+
+@media (min-width: theme(--breakpoint-sm)) {
+  #overlay-menu {
+    width: 400px;
+    align-items: unset;
   }
-  to {
-    transform: rotate(360deg);
+
+  #overlay-menu.hide {
+    right: -400px;
   }
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
-  }
+#overlay-menu-container {
+  height: 100%;
+  left: 0;
+  margin: 0 auto;
+  max-width: calc(100% - 30px);
+  opacity: 1;
+  padding: 3rem 0;
+  pointer-events: none;
+  position: absolute;
+  right: 0;
+  z-index: 99;
 }
 
-.card {
-  padding: 2em;
+#overlay-menu-container header {
+  padding-top: 1rem;
+  pointer-events: none;
+  position: absolute;
+  top: 0;
+  right: 0;
+  transition: 0.25s;
+  width: 100%;
 }
 
-.read-the-docs {
-  color: #888;
+#overlay-menu-container .nav-button {
+  align-items: center;
+  background-color: var(--color-secondary);
+  background-image: radial-gradient(
+    circle at center,
+    transparent 50% var(--color-secondary) 50%
+  );
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: 0 0;
+  border-radius: 15px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  height: 48px;
+  justify-content: center;
+  pointer-events: auto;
+  position: absolute;
+  right: 0;
+  transform-origin: top right;
+  transition: background-size 0.3s ease-in-out;
+  width: 48px;
+  z-index: 99;
+}
+
+.main-canvas {
+  left: 0;
+  max-height: 100dvh;
+  max-width: 100dvw;
+  outline: none;
+  pointer-events: all;
+  position: fixed;
+  top: 0;
 }

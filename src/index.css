@@ -1,29 +1,37 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
 
-/* :root {
-  font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
-
-  color-scheme: light dark;
-  color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
-
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-} */
-
-#root {
-  width: 100vw;
-  height: 100vh;
-  text-align: center;
+* {
+  scroll-behavior: smooth;
 }
 
 html,
 body {
-  margin: 0;
+  height: 100%;
+  overflow: hidden;
 }
+
+body {
+  display: flex;
+  justify-content: center;
+  position: relative;
+}
+
+@theme {
+  --color-primary: #3a0ca3;
+  --color-secondary: #9d4edd;
+  --color-highlight: #d6bcfa;
+  --color-highlight: #1e1b2e;
+  --color-text: #f5f0ec;
+
+  --breakpoint-sm: 40rem; /* 640px  */
+  --breakpoint-md: 48rem; /* 768px  */
+  --breakpoint-lg: 64rem; /* 1024px */
+  --breakpoint-xl: 80rem; /* 1280px */
+  --breakpoint-2xl: 96rem; /* 1536px */
+}
+
+/* :root {
+  @media (min-width: theme(--breakpoint-md)) and (max-width: theme(--breakpoint-lg)) {
+    color: red;
+  }
+} */
