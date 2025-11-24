@@ -1,6 +1,11 @@
 import "./App.css";
 import Experience from "@/sections/Experience";
-import { OverlayButton, OverlayMenu } from "./sections/Overlay";
+import {
+  OverlayButton,
+  OverlayMenu,
+  StartOverlay,
+  Crosshair,
+} from "./sections/Overlay";
 import { LiquidTransition } from "@/components/Transitions/LiquidTransition";
 import { useState } from "react";
 
@@ -19,6 +24,8 @@ function App() {
         <div className="w-dvw h-dvh">
           <Experience />
         </div>
+        <StartOverlay />
+        <Crosshair />
       </main>
       {/* {transitioning && (
         <LiquidTransition

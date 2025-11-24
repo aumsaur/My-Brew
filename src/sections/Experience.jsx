@@ -7,30 +7,28 @@ import {
   OrbitControls,
   PerspectiveCamera,
   useHelper,
+  PointerLockControls,
 } from "@react-three/drei";
+import { useShallow } from "zustand/react/shallow";
+import { useStore } from "@/stores/store";
 import { BlendFunction } from "postprocessing";
 import { useControls, folder } from "leva";
 import { Suspense, useRef, useEffect } from "react";
+import PlayerController from "@/components/PlayerController";
 
 function Lights() {
   const spotRef = useRef(null);
 
   // 🔍 uncomment this so you can see the cone
-  useHelper(spotRef, THREE.SpotLightHelper, /* size */ 1, /* color */ "yellow");
-
-  useFrame(({ clock }) => {
-    if (!spotRef.current) return;
-
-    const t = clock.getElapsedTime();
-
-    const flicker = Math.sin(t * 2) * 1.5;
-
-    spotRef.current.intensity = 1.5 + flicker;
-  });
+  // useHelper(spotRef, THREE.SpotLightHelper, /* size */ 1, /* color */ "yellow");
 
   return (
     <>
       <ambientLight intensity={0.2} />
+
+      {/* Accent lights for the magical effect */}
+      <pointLight position={[0, 2, 0]} color="#9d4edd" intensity={0.5} />
+      <pointLight position={[-3, 1, -3]} color="#3a0ca3" intensity={0.7} />
       <spotLight
         ref={spotRef}
         position={[0, 5, 0]}
@@ -63,16 +61,26 @@ function Lights() {
 }
 
 function Camera() {
+  const { isPlaying } = useStore(
+    useShallow(({ playerStore }) => ({ ...playerStore }))
+  );
+
   return (
     <>
       <PerspectiveCamera makeDefault fov={45} position={[1, 0, 0]} />
-      <OrbitControls
-        enablePan={false}
-        minDistance={4}
-        maxDistance={10}
-        minPolarAngle={Math.PI / 6}
-        maxPolarAngle={Math.PI / 2}
-      />
+      {!isPlaying ? (
+        <OrbitControls
+          enablePan={false}
+          // enableRotate={false}
+          enableZoom={false}
+          minDistance={4}
+          maxDistance={10}
+          minPolarAngle={Math.PI / 6}
+          maxPolarAngle={Math.PI / 2}
+        />
+      ) : (
+        <PointerLockControls />
+      )}
     </>
   );
 }
@@ -86,15 +94,8 @@ const Experience = () => {
 
       <Suspense fallback={null}>
         <Environment preset="night" />
-        {/* Ambient lighting */}
-        {/* <ambientLight intensity={0.4} /> */}
-
         {/* Main directional light with shadows */}
         <Lights />
-
-        {/* Accent lights for the magical effect */}
-        {/* <pointLight position={[0, 2, 0]} color="#9d4edd" intensity={0.5} />
-        <pointLight position={[-3, 1, -3]} color="#3a0ca3" intensity={0.7} /> */}
 
         {/* Cauldron and steam */}
         <group position={[0, 0.25, 0]}>
@@ -106,7 +107,7 @@ const Experience = () => {
           rotation={[-Math.PI / 2, 0, 0]}
           position={[0, -2.25, 0]}
           receiveShadow>
-          <planeGeometry args={[20, 20]} />
+          <planeGeometry args={[50, 50]} />
           <meshStandardMaterial color="#1f1135" />
         </mesh>
 
@@ -121,6 +122,7 @@ const Experience = () => {
         </EffectComposer>
         {/* Controls for interactivity */}
         <Camera />
+        <PlayerController />
       </Suspense>
     </Canvas>
   );

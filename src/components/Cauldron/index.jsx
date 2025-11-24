@@ -12,7 +12,7 @@ const Cauldron = ({
   // need toon water shader
 
   return (
-    <group position={position} scale={scale} {...props}>
+    <group name="cauldron" position={position} scale={scale} {...props}>
       {/* pass the color down into Model */}
       <Model liquidColor={liquidColor} />
       <Bubbles position={[0, 0.5, 0]} color={bubbleColor} />
