@@ -7,10 +7,7 @@ import {
   OrbitControls,
   PerspectiveCamera,
   useHelper,
-  PointerLockControls,
 } from "@react-three/drei";
-import { useShallow } from "zustand/react/shallow";
-import { useStore } from "@/stores/store";
 import { BlendFunction } from "postprocessing";
 import { useControls, folder } from "leva";
 import { Suspense, useRef, useEffect } from "react";
@@ -61,26 +58,18 @@ function Lights() {
 }
 
 function Camera() {
-  const { isPlaying } = useStore(
-    useShallow(({ playerStore }) => ({ ...playerStore }))
-  );
-
   return (
     <>
       <PerspectiveCamera makeDefault fov={45} position={[1, 0, 0]} />
-      {!isPlaying ? (
-        <OrbitControls
-          enablePan={false}
-          // enableRotate={false}
-          enableZoom={false}
-          minDistance={4}
-          maxDistance={10}
-          minPolarAngle={Math.PI / 6}
-          maxPolarAngle={Math.PI / 2}
-        />
-      ) : (
-        <PointerLockControls />
-      )}
+      <OrbitControls
+        enablePan={false}
+        // enableRotate={false}
+        enableZoom={false}
+        minDistance={4}
+        maxDistance={10}
+        minPolarAngle={Math.PI / 6}
+        maxPolarAngle={Math.PI / 2}
+      />
     </>
   );
 }
@@ -120,9 +109,8 @@ const Experience = () => {
             blendFunction={BlendFunction.SCREEN}
           />
         </EffectComposer>
-        {/* Controls for interactivity */}
+        {/* Controls for interactivity (orbit camera) */}
         <Camera />
-        <PlayerController />
       </Suspense>
     </Canvas>
   );

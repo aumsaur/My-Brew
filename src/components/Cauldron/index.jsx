@@ -9,8 +9,6 @@ const Cauldron = ({
   bubbleColor = "#c077ff", // sparkles color
   ...props
 }) => {
-  // need toon water shader
-
   return (
     <group name="cauldron" position={position} scale={scale} {...props}>
       {/* pass the color down into Model */}

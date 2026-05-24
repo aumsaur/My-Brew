@@ -1,31 +1,15 @@
 import "./App.css";
 import Experience from "@/sections/Experience";
-import {
-  OverlayButton,
-  OverlayMenu,
-  StartOverlay,
-  Crosshair,
-} from "./sections/Overlay";
-import { LiquidTransition } from "@/components/Transitions/LiquidTransition";
-import { useState } from "react";
+import { OverlayButton, OverlayMenu } from "./sections/Overlay";
 
 function App() {
-  const [transitioning, setTransitioning] = useState(false);
-
   return (
     <>
       <main>
-        <button
-          className="absolute top-0 left-0 p-3 text-white z-[99] cursor-pointer"
-          onClick={() => setTransitioning(!transitioning)}>
-          Start Liquid Fill
-        </button>
         <OverlayButton />
         <div className="w-dvw h-dvh">
           <Experience />
         </div>
-        <StartOverlay />
-        <Crosshair />
       </main>
       {/* {transitioning && (
         <LiquidTransition
@@ -38,7 +22,6 @@ function App() {
           }}
         />
       )} */}
-      <LiquidTransition active={transitioning} duration={5} />
       <OverlayMenu />
     </>
   );
