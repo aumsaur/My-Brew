@@ -6,13 +6,10 @@
 
 html,
 body {
-  height: 100%;
-  overflow: hidden;
+  overflow-x: hidden;
 }
 
 body {
-  display: flex;
-  justify-content: center;
   position: relative;
 }
 
@@ -35,3 +32,53 @@ body {
     color: red;
   }
 } */
+
+@keyframes innerFloat {
+  0%,
+  100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes innerSway {
+  0%,
+  100% {
+    transform: translate(0px, 0px);
+  }
+  33% {
+    transform: translate(5px, -4px);
+  }
+  66% {
+    transform: translate(-3px, -8px);
+  }
+}
+
+@keyframes particleDrift {
+  0% {
+    transform: translateY(0) translateX(0);
+    opacity: 0;
+  }
+  10% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 0.7;
+  }
+  100% {
+    transform: translateY(-80vh) translateX(12px);
+    opacity: 0;
+  }
+}
+
+@keyframes rayShimmer {
+  0%,
+  100% {
+    opacity: 0.04;
+  }
+  50% {
+    opacity: 0.13;
+  }
+}
