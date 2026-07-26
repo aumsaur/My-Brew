@@ -102,8 +102,9 @@ export default function GeoCrystal({ data, hovered, setHovered, play = true }) {
         text={data.label}
         color={data.color}
         y={topY + 0.32}
+        hovered={hovered}
       />
-      {hovered && <InfoCard data={data} top={topY + 1.0} />}
+      <InfoCard data={data} top={topY + 1.0} hovered={hovered} />
     </group>
   );
 }

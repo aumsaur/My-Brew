@@ -1,6 +1,9 @@
-import { useRef, useMemo } from "react";
+import { Suspense, useRef, useMemo } from "react";
 import { useFrame } from "@react-three/fiber";
+import { useGLTF } from "@react-three/drei";
 import * as THREE from "three";
+
+import GlbModel from "./GlbModel";
 
 // ── Stylized low-poly ingredient props ───────────────────────────────────────
 // Each prop takes a base `color` and derives a darker/lighter tone from it so
@@ -102,7 +105,7 @@ function Jug({ color }) {
   );
 }
 
-// Cola Nut — a rounded reddish kola seed with a flat, lighter cut face + seam.
+// Buzzroot Nut — a rounded reddish kola seed with a flat, lighter cut face + seam.
 function Nut({ color }) {
   const { base, light, dark } = useTones(color);
   return (
@@ -126,34 +129,41 @@ function Nut({ color }) {
   );
 }
 
+// Crystal — no longer a raw gem formation: this kind is only ever shown
+// jarred (fizzcrystal/dragonresin/brimstone all have display:"jar"), so it's
+// pregrind — a heaped MOUND of small crushed granules, not tall pointed
+// shards. The Jar wrapper renders 3 of these at small scale as the floating
+// contents, so the mound itself stays simple: a dozen tiny irregular chunks
+// piled into a rough cone.
 function Crystal({ color }) {
-  const { base, light } = useTones(color);
-  // a cluster of pointed shards rather than a single gem
-  const shards = [
-    { p: [0, 0.02, 0], s: [1, 1.9, 1], r: [0.15, 0.3, 0] },
-    { p: [0.17, -0.06, 0.05], s: [0.6, 1.3, 0.6], r: [0.3, 0, 0.5] },
-    { p: [-0.16, -0.09, -0.03], s: [0.5, 1.1, 0.5], r: [-0.2, 0.4, -0.35] },
-    { p: [0.03, -0.04, -0.16], s: [0.45, 1.0, 0.45], r: [0.1, -0.3, 0.25] },
+  const { base, light, dark } = useTones(color);
+  const grains = [
+    { p: [0, -0.14, 0], s: 0.14, t: 0 },
+    { p: [0.09, -0.15, 0.05], s: 0.1, t: 1 },
+    { p: [-0.08, -0.15, -0.04], s: 0.11, t: 2 },
+    { p: [0.04, -0.14, -0.09], s: 0.09, t: 0 },
+    { p: [-0.05, -0.13, 0.08], s: 0.1, t: 1 },
+    { p: [0.02, -0.02, 0.02], s: 0.12, t: 2 },
+    { p: [-0.1, -0.03, 0.03], s: 0.08, t: 0 },
+    { p: [0.11, -0.04, -0.03], s: 0.09, t: 1 },
+    { p: [0, 0.08, 0], s: 0.1, t: 2 },
+    { p: [-0.04, 0.06, -0.06], s: 0.07, t: 0 },
+    { p: [0.06, 0.05, 0.06], s: 0.075, t: 1 },
+    { p: [0, 0.16, 0], s: 0.06, t: 2 },
   ];
+  const tones = [base, light, dark];
   return (
     <group rotation={[0.1, 0.3, 0]}>
-      {shards.map((sh, i) => (
-        <mesh
-          key={i}
-          position={sh.p}
-          rotation={sh.r}
-          scale={sh.s.map((v) => v * 0.22)}
-        >
+      {grains.map((g, i) => (
+        <mesh key={i} position={g.p} rotation={[i, i * 1.7, i * 0.6]} scale={g.s}>
           <octahedronGeometry args={[1, 0]} />
           <meshStandardMaterial
-            color={i === 0 ? base : light}
+            color={tones[g.t]}
             emissive={base}
-            emissiveIntensity={0.5}
+            emissiveIntensity={0.35}
             flatShading
-            roughness={0.12}
-            metalness={0.25}
-            transparent
-            opacity={0.92}
+            roughness={0.25}
+            metalness={0.15}
           />
         </mesh>
       ))}
@@ -388,6 +398,61 @@ function Feather({ color }) {
   );
 }
 
+// Bat Wing — a webbed membrane stretched between finger-bone spokes radiating
+// from a small wrist joint, plus a hook-claw thumb. Used to share Feather's
+// model with Raven Feather, which is why it never actually read as a bat wing
+// (a bird feather and a bat wing are completely different shapes). Panels are
+// real wedge geometry (wrist→fingertip→fingertip triangles), not an
+// approximated blob, computed once at module scope since they don't depend on
+// `color`.
+const BAT_FINGERS = [
+  { a: -0.6, len: 0.4 },
+  { a: -0.2, len: 0.48 },
+  { a: 0.2, len: 0.46 },
+  { a: 0.58, len: 0.36 },
+];
+const BAT_TIPS = BAT_FINGERS.map((f) => [
+  Math.sin(f.a) * f.len,
+  Math.cos(f.a) * f.len,
+]);
+const BAT_PANEL_GEOS = BAT_TIPS.slice(0, -1).map((tip, i) => {
+  const shape = new THREE.Shape();
+  shape.moveTo(0, 0);
+  shape.lineTo(tip[0], tip[1]);
+  shape.lineTo(BAT_TIPS[i + 1][0], BAT_TIPS[i + 1][1]);
+  shape.closePath();
+  return new THREE.ExtrudeGeometry(shape, { depth: 0.012, bevelEnabled: false });
+});
+
+function BatWing({ color }) {
+  const { base, dark } = useTones(color);
+  return (
+    <group rotation={[0, 0, -0.3]} position={[0, -0.15, 0]}>
+      {BAT_PANEL_GEOS.map((geo, i) => (
+        <mesh key={i} geometry={geo}>
+          <meshStandardMaterial color={dark} roughness={0.6} side={THREE.DoubleSide} flatShading />
+        </mesh>
+      ))}
+      {BAT_TIPS.map((tip, i) => (
+        <mesh
+          key={i}
+          position={[tip[0] / 2, tip[1] / 2, 0.01]}
+          rotation={[0, 0, -BAT_FINGERS[i].a]}
+          scale={[0.012, BAT_FINGERS[i].len, 0.012]}
+        >
+          <boxGeometry />
+          <meshStandardMaterial color={base} roughness={0.5} flatShading />
+        </mesh>
+      ))}
+      {/* thumb claw hook at the wrist */}
+      <mesh position={[-0.06, 0.02, 0.015]} rotation={[0, 0, 1.1]} scale={[0.018, 0.055, 0.018]}>
+        <coneGeometry args={[1, 1, 4]} />
+        <meshStandardMaterial color={base} roughness={0.5} flatShading />
+      </mesh>
+    </group>
+  );
+}
+
 // Mandrake — a gnarled, knotty taproot: a chunky faceted body with forked legs
 // and stubby arms, deep ancient brown, threaded with glowing azure veins and a
 // little sprig of greens on its crown.
@@ -461,6 +526,37 @@ function Mandrake({ color }) {
   );
 }
 
+// Tea Leaf — a small pile of dried, curled leaves. A few flattened ellipsoids
+// fanned at angles with a central spine, flat-shaded so the curl edges read.
+// Used for Duskleaf Tea (dusk-orange) and Wormwood (bitter green) via `color`.
+function Leaf({ color }) {
+  const { base, dark, light } = useTones(color);
+  const leaves = [
+    { p: [0, 0.02, 0], r: [0.1, 0.2, -0.2], s: [0.18, 0.05, 0.34], c: base },
+    { p: [-0.12, -0.01, 0.06], r: [0.2, -0.5, 0.5], s: [0.14, 0.045, 0.28], c: dark },
+    { p: [0.13, -0.02, -0.05], r: [-0.15, 0.6, -0.4], s: [0.13, 0.045, 0.26], c: light },
+    { p: [0.02, -0.03, 0.13], r: [0.25, 1.4, 0.3], s: [0.12, 0.04, 0.24], c: base },
+  ];
+  return (
+    <group rotation={[0.1, 0.3, 0]}>
+      {leaves.map((l, i) => (
+        <group key={i} position={l.p} rotation={l.r}>
+          {/* curled blade */}
+          <mesh scale={l.s}>
+            <sphereGeometry args={[1, 8, 6]} />
+            <meshStandardMaterial color={l.c} roughness={0.8} flatShading />
+          </mesh>
+          {/* midrib */}
+          <mesh position={[0, l.s[1] * 0.9, 0]} scale={[0.01, 0.01, l.s[2] * 0.95]}>
+            <boxGeometry />
+            <meshStandardMaterial color={dark} roughness={0.85} />
+          </mesh>
+        </group>
+      ))}
+    </group>
+  );
+}
+
 const KINDS = {
   bean: Bean,
   jug: Jug,
@@ -471,8 +567,43 @@ const KINDS = {
   berries: Berries,
   flower: Flower,
   feather: Feather,
+  batwing: BatWing,
   mandrake: Mandrake,
+  leaf: Leaf,
 };
+
+// Kinds with a Meshy-generated GLB in /public/models override the procedural prop
+// above. `fit` = target longest dimension in world units (GlbModel defaults to
+// 0.9); tune per model if one lands too big/small next to the others.
+// "crystal" is deliberately NOT here — it's pregrind now (a jarred granule
+// pile, see the Crystal() component above), not a distinct shape worth an AI
+// generation; the jar wrapper already supplies the "container" visual.
+// `twoTone` (see GlbModel.jsx) is opt-in — only enable it where it's actually
+// been checked and confirmed to look right. Confirmed good on mushroom
+// (cap/stem) and berries (nightshade's cluster-on-a-stem). Checked and
+// rejected on the rest (jug/nut/flower/feather/mandrake/batwing) — none of
+// those have a real thin-core structure for the axis heuristic to find, so it
+// just painted an arbitrary cream patch with no relation to the actual shape.
+const MODEL_URLS = {
+  bean: { url: "/models/bean.glb" },
+  jug: { url: "/models/jug.glb" },
+  nut: { url: "/models/nut.glb" },
+  mushroom: { url: "/models/mushroom.glb", twoTone: true },
+  // NOTE: no "eyeball" entry — reverted to the hand-built version. Always jar-
+  // displayed (small, viewed through tinted brine + glass), and a sphere has
+  // no thin/wide distinction for the two-tone axis heuristic to grab onto, so
+  // a generic Meshy blob can't approximate hand-placed iris/pupil/vein detail
+  // the way it can approximate a mushroom's cap-vs-stem split.
+  berries: { url: "/models/berries.glb", twoTone: true },
+  flower: { url: "/models/flower.glb" },
+  feather: { url: "/models/feather.glb" },
+  mandrake: { url: "/models/mandrake.glb" },
+  leaf: { url: "/models/leaf.glb" },
+  batwing: { url: "/models/batwing.glb" },
+};
+
+// Preload only the registered GLBs, so an empty map (fresh checkout) fetches nothing.
+Object.values(MODEL_URLS).forEach((m) => useGLTF.preload(m.url));
 
 // A glass specimen jar (murky brine + wooden lid) that holds `children` inside.
 // Used on the cabinet for "preserved" ingredients; clicking still drops the raw
@@ -550,6 +681,8 @@ export function Jar({ children, tint = "#6f7a45" }) {
 //  • autoRotate — slow spin (shelf/thumbnail use); spins faster while hovered.
 //  • idle       — gentle phase-offset bob + sway so the prop feels alive at rest.
 //  • hovered    — springy squash-&-stretch "pop" (drives the cabinet hover feel).
+//  • hint       — a slow "breathing" swell at rest: a wordless nudge that the
+//                 prop is pickable. Fades out as you hover (the pop takes over).
 // idle/hover act on a nested inner group, so callers that animate the outer
 // group (e.g. the falling-ingredient drop) are unaffected.
 export default function IngredientModel({
@@ -560,6 +693,7 @@ export default function IngredientModel({
   spin = 0.6,
   idle = false,
   hovered = false,
+  hint = false,
   seed,
 }) {
   const ref = useRef(); // outer — spin
@@ -590,15 +724,27 @@ export default function IngredientModel({
     } else {
       g.position.y = p * 0.06;
     }
-    // squash & stretch on the pop: taller + thinner at the peak
-    g.scale.set(1 - p * 0.08, 1 + p * 0.14, 1 - p * 0.08);
+    // slow breathing "pick me" hint at rest — swells ~4%, eased out by the pop so
+    // it hands off cleanly to the hover squash (no fighting once you're over it)
+    const breath = hint ? (0.5 + Math.sin(t * 1.9) * 0.5) * 0.04 * (1 - p) : 0;
+    // squash & stretch on the pop: taller + thinner at the peak (+ the breath)
+    g.scale.set(1 + breath - p * 0.08, 1 + breath + p * 0.14, 1 + breath - p * 0.08);
   });
 
   const Comp = KINDS[kind] ?? Crystal;
+  const modelDef = MODEL_URLS[kind];
   return (
     <group ref={ref} scale={scale}>
       <group ref={inner}>
-        <Comp color={color} />
+        {modelDef ? (
+          // While the GLB streams in, show the procedural prop as the fallback,
+          // then swap. Recoloured flat-shaded to match the art direction.
+          <Suspense fallback={<Comp color={color} />}>
+            <GlbModel url={modelDef.url} color={color} fit={modelDef.fit} twoTone={modelDef.twoTone} />
+          </Suspense>
+        ) : (
+          <Comp color={color} />
+        )}
       </group>
     </group>
   );

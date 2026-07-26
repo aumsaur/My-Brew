@@ -3,7 +3,7 @@ import { Canvas } from "@react-three/fiber";
 import { OrbitControls, Environment } from "@react-three/drei";
 import { EffectComposer, Bloom } from "@react-three/postprocessing";
 import { BlendFunction } from "postprocessing";
-import Vessel from "@/features/brew/scene/Vessel";
+import ServedVessel from "@/features/brew/scene/RecipeVessel";
 import { useBrew } from "@/features/brew/store";
 
 const FONT = "'Cinzel', Georgia, serif";
@@ -54,7 +54,7 @@ export default function InspectOverlay() {
         />
 
         <group onClick={(e) => e.stopPropagation()}>
-          <Vessel vessel={potion.vessel} color={potion.color} scale={2} />
+          <ServedVessel recipeId={potion.recipeId} vessel={potion.vessel} color={potion.color} scale={2} />
         </group>
 
         <OrbitControls

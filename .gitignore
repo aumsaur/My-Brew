@@ -12,6 +12,9 @@ dist
 dist-ssr
 *.local
 
+# Local secrets (Meshy API key etc.) — keep .env.example tracked
+.env
+
 # Playwright test artifacts
 test-results
 playwright-report

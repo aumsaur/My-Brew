@@ -154,8 +154,9 @@ export default function CrystalCluster({
         text={data.label}
         color={data.color}
         y={topY + 0.32}
+        hovered={hovered}
       />
-      {hovered && <InfoCard data={data} top={topY + 0.95} />}
+      <InfoCard data={data} top={topY + 0.95} hovered={hovered} />
     </group>
   );
 }

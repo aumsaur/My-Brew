@@ -1,9 +1,16 @@
-// Ingredients the user drags into the cauldron. Each has a 3D model `kind`, a
+// Ingredients the witch pours into the cauldron. Each has a 3D model `kind`, a
 // color (for the liquid blend + glow), `vibe` weights that lean the result toward
-// a product category, adjective/noun used to name the brew, a `strength` (how
-// concentrated/potent it is — drives the result's intensity), and an optional
-// `creamer` flag for milk-like dilutants.
+// a product category, adjective/noun used to name off-recipe oddities, a
+// `strength` (how concentrated/potent it is), and an optional `creamer` flag for
+// milk-like dilutants.
+//
+// Order matters: the cabinet paginates this flat list into shelf "pages" (see
+// PAGE_SIZE). Page 1 is the everyday working shelf, page 2 the arcane shelf where
+// the rarer makings — and the secret Thai-tea ingredients — live.
+export const PAGE_SIZE = 10; // cubbies per cabinet page (matches ROW_COLS 4+3+3)
+
 export const INGREDIENT_LIST = [
+  // ── Page 1 · the working shelf ──────────────────────────────────────────────
   {
     id: "coffeebean",
     name: "Coffee Bean",
@@ -16,22 +23,22 @@ export const INGREDIENT_LIST = [
   },
   {
     id: "cream",
-    name: "Cream",
+    name: "Ghostmilk", // was "Cream" — echoes Graveyard Latte's "a ghost of cream"
     kind: "jug",
     color: "#f3e7c9",
     adjective: "Silken",
-    noun: "Calm",
+    noun: "Hush",
     vibe: { cafe: 2, remedy: 1 },
     strength: 0.15,
     creamer: true,
   },
   {
     id: "colanut",
-    name: "Cola Nut",
+    name: "Buzzroot Nut", // was "Cola Nut"
     kind: "nut",
     color: "#8a3324",
-    adjective: "Effervescent",
-    noun: "Buzz",
+    adjective: "Crackling",
+    noun: "Static",
     vibe: { fizzy: 3 },
     strength: 0.9,
   },
@@ -44,6 +51,7 @@ export const INGREDIENT_LIST = [
     noun: "Clarity",
     vibe: { fizzy: 2, potion: 1 },
     strength: 0.45,
+    display: "jar", // pregrind — jarred crushed crystal, not a raw formation
   },
   {
     id: "toadstool",
@@ -57,7 +65,7 @@ export const INGREDIENT_LIST = [
   },
   {
     id: "eyeball",
-    name: "Eyeball",
+    name: "Newt's Eye",
     kind: "eyeball",
     color: "#5f9e8a",
     adjective: "Bloodshot",
@@ -107,11 +115,96 @@ export const INGREDIENT_LIST = [
     vibe: { potion: 2, remedy: 1 },
     strength: 0.8,
   },
+
+  // ── Page 2 · the arcane shelf (rarer makings + the secret street-brew) ───────
+  {
+    id: "spicedtea",
+    name: "Duskleaf Tea", // was "Spiced Tea Leaf" — echoes Thai Tea's "orange as dusk"
+    kind: "leaf",
+    color: "#c96f1e", // dusk-orange — the tell-tale hue of Thai tea
+    adjective: "Smoky",
+    noun: "Dusk",
+    vibe: { cafe: 2, remedy: 1 },
+    strength: 0.7,
+  },
+  {
+    id: "condensedmilk",
+    name: "Starmilk", // was "Condensed Milk" — echoes Thai Tea's "sweet as a secret"
+    kind: "jug",
+    color: "#f6ead0",
+    adjective: "Sweet",
+    noun: "Secret",
+    vibe: { cafe: 2 },
+    strength: 0.2,
+    creamer: true,
+  },
+  {
+    id: "dragonresin",
+    name: "Dragon's Blood",
+    kind: "crystal",
+    color: "#8a1220",
+    adjective: "Ember",
+    noun: "Fury",
+    vibe: { potion: 2, remedy: 1 },
+    strength: 0.95,
+    display: "jar",
+  },
+  {
+    id: "batwing",
+    name: "Bat Wing",
+    kind: "batwing", // was "feather" — a bat wing looks nothing like a bird feather
+    color: "#2a2130",
+    adjective: "Leathery",
+    noun: "Flight",
+    vibe: { potion: 3 },
+    strength: 0.65,
+  },
+  {
+    id: "wormwood",
+    name: "Wormwood",
+    kind: "leaf",
+    color: "#6f7a3a",
+    adjective: "Bitter",
+    noun: "Absinthe",
+    vibe: { remedy: 2, potion: 1 },
+    strength: 0.8,
+  },
+  {
+    id: "brimstone",
+    name: "Brimstone",
+    kind: "crystal",
+    color: "#d8b13a",
+    adjective: "Sulfurous",
+    noun: "Spark",
+    vibe: { fizzy: 2, potion: 1 },
+    strength: 0.85,
+    display: "jar",
+  },
+  {
+    id: "honey",
+    name: "Wild Honey",
+    kind: "jug",
+    color: "#d9971f",
+    adjective: "Golden",
+    noun: "Balm",
+    vibe: { remedy: 2, cafe: 1 },
+    strength: 0.35,
+    creamer: true,
+  },
 ];
 
 export const INGREDIENTS = Object.fromEntries(
   INGREDIENT_LIST.map((i) => [i.id, i])
 );
+
+// Number of cabinet pages the flat list spans.
+export const PAGE_COUNT = Math.ceil(INGREDIENT_LIST.length / PAGE_SIZE);
+
+// The ingredients shown on a given cabinet page (0-based).
+export function ingredientsOnPage(page) {
+  const start = page * PAGE_SIZE;
+  return INGREDIENT_LIST.slice(start, start + PAGE_SIZE);
+}
 
 export const DEFAULT_LIQUID = "#8a2be2"; // resting violet
 
@@ -170,9 +263,12 @@ export const CATEGORIES = {
     ],
   },
 };
-// Only the four "real" categories take part in vibe scoring; mystery/fail are
-// outcomes pickCategory falls back to.
-const CATEGORY_KEYS = ["cafe", "fizzy", "remedy", "potion"];
+// Only these take part in FREEFORM vibe scoring (the off-recipe oddity path);
+// mystery/fail are outcomes pickCategory falls back to. "cafe" is deliberately
+// excluded — café is reachable ONLY by pouring a curated café recipe's exact
+// ratio (see recipes.js SECRET_MATCH_THRESHOLD), never stumbled into as a vibe
+// fallback, so the whole shelf stays hidden until you nail it on purpose.
+const CATEGORY_KEYS = ["fizzy", "remedy", "potion"];
 
 // All vessel model kinds (must match the VESSELS registry in Vessel.jsx)
 export const VESSEL_KINDS = ["cup", "can", "colabottle", "bottle", "flask"];
@@ -201,6 +297,24 @@ export function blendColor(ids) {
     sum[2] += b;
   }
   return rgbToHex(sum.map((v) => v / ids.length));
+}
+
+// Amount-weighted blend for the live pour: an ingredient poured heavily dominates
+// the cauldron color more than a splash of another. `pours` maps id → amount.
+export function blendPours(pours) {
+  const ids = Object.keys(pours).filter((id) => pours[id] > 0);
+  if (!ids.length) return DEFAULT_LIQUID;
+  const sum = [0, 0, 0];
+  let total = 0;
+  for (const id of ids) {
+    const w = pours[id];
+    const [r, g, b] = hexToRgb(INGREDIENTS[id].color);
+    sum[0] += r * w;
+    sum[1] += g * w;
+    sum[2] += b * w;
+    total += w;
+  }
+  return rgbToHex(sum.map((v) => v / total));
 }
 
 // Per-category color poles. The product hue lerps from `mild` (creamy / low
@@ -250,7 +364,8 @@ const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 // Dominant vibe decides the category. We don't curate every mix: if the
 // ingredients sprawl across 3+ categories it's a chaotic "fail", and if the top
 // two categories tie (no clear winner) it's an ambiguous "mystery". Otherwise
-// the clear winner stands.
+// the clear winner stands. Used only for OFF-RECIPE oddities now (recipes.js
+// drives curated results).
 export function pickCategory(ids) {
   const totals = { cafe: 0, fizzy: 0, remedy: 0, potion: 0 };
   for (const id of ids) {

@@ -3,8 +3,8 @@ import Cauldron from "@/features/brew/scene/Cauldron";
 import BrewScene from "@/features/brew/scene/BrewScene";
 import CabinetShelf from "@/features/brew/scene/CabinetShelf";
 import WitchNook from "@/features/brew/scene/WitchNook";
-import Hotspots from "@/features/brew/scene/Hotspots";
 import { useBrew } from "@/features/brew/store";
+import { useStore } from "@/shared/store/ui";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import {
   EffectComposer,
@@ -17,7 +17,20 @@ import { BlendFunction } from "postprocessing";
 import { Suspense, useRef, useEffect } from "react";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
+import { HERO_END } from "@/shared/constants/journey";
 gsap.registerPlugin(ScrollTrigger);
+
+// The camera path doesn't begin until the opening splash is scrolled past, so
+// page-scroll is remapped [HERO_END..1] → PATH progress [0..1]. This keeps the
+// dive/submersion locked to journey.js exactly as it was before the hero phase.
+const POST_HERO_SPAN = 1 - HERO_END;
+
+// "Open the grimoire" framing: a close read-over-the-shoulder shot of the
+// lectern book. This is a VIRTUAL route — reached only by clicking the book,
+// never by scrolling — so it lives outside the scroll path. Tuned against the
+// lectern's world placement in WitchNook.jsx (verify visually before trusting).
+const BOOK_POS = new THREE.Vector3(0.4, 0.15, 4.7);
+const BOOK_LOOK = new THREE.Vector3(-1.3, -0.75, 3.6);
 
 // Camera path: approaches → hits liquid surface → plunges below → fade takes over
 const PATH = [
@@ -49,11 +62,23 @@ function lerpPath(progress) {
   }
 }
 
+// Scroll-driven framing: the camera stays parked at PATH[0] through the hero
+// splash (progress ≤ 0), then follows the committed dive path unchanged.
+function frameFor(scroll) {
+  return lerpPath((scroll - HERO_END) / POST_HERO_SPAN);
+}
+
 function CameraRig() {
   const { camera } = useThree();
-  const progress = useRef(0);
+  const scroll = useRef(0); // raw page-scroll fraction (0..1)
+  const bookProg = useRef(0); // 0 = on the scroll path, 1 = at the open book
+  const isBookOpen = useStore((s) => s.grimoireStore.isBookOpen);
   const camPos = useRef(new THREE.Vector3(...PATH[0].pos));
   const camLook = useRef(new THREE.Vector3(...PATH[0].look));
+  // last valid scroll-path frame (lerpPath returns undefined once submerged;
+  // holding the last frame keeps the book blend well-defined everywhere)
+  const lastPos = useRef(new THREE.Vector3(...PATH[0].pos));
+  const lastLook = useRef(new THREE.Vector3(...PATH[0].look));
 
   useEffect(() => {
     camera.position.set(...PATH[0].pos);
@@ -66,7 +91,7 @@ function CameraRig() {
         start: "top top",
         end: "bottom bottom",
         onUpdate: (self) => {
-          progress.current = self.progress;
+          scroll.current = self.progress;
         },
       });
     });
@@ -74,15 +99,27 @@ function CameraRig() {
     return () => ctx.revert();
   }, [camera]);
 
-  useFrame(() => {
-    const state = lerpPath(progress.current);
-    if (!state) return;
+  useFrame((_state, delta) => {
+    const base = frameFor(scroll.current);
+    if (base) {
+      lastPos.current.set(...base.pos);
+      lastLook.current.set(...base.look);
+    }
 
-    _pos.set(...state.pos);
-    _look.set(...state.look);
+    // ease the virtual book route 0↔1 (frame-rate independent), then blend the
+    // scroll-path frame toward the book pose — this is the click-triggered dolly
+    bookProg.current = THREE.MathUtils.damp(
+      bookProg.current,
+      isBookOpen ? 1 : 0,
+      3,
+      delta
+    );
+    const bp = THREE.MathUtils.smoothstep(bookProg.current, 0, 1);
+    _pos.copy(lastPos.current).lerp(BOOK_POS, bp);
+    _look.copy(lastLook.current).lerp(BOOK_LOOK, bp);
 
-    camPos.current.lerp(_pos, 0.1);
-    camLook.current.lerp(_look, 0.1);
+    camPos.current.lerp(_pos, 0.12);
+    camLook.current.lerp(_look, 0.12);
 
     camera.position.copy(camPos.current);
     camera.lookAt(camLook.current);
@@ -122,7 +159,13 @@ const Experience = () => {
   const liquidColor = useBrew((s) => s.color);
 
   return (
-    <Canvas shadows style={{ width: "100%", height: "100%" }}>
+    <Canvas
+      shadows
+      // request the discrete/high-performance GPU (not the integrated chip);
+      // WebGL already renders on the GPU — this just picks the better one
+      gl={{ powerPreference: "high-performance", antialias: true }}
+      style={{ width: "100%", height: "100%" }}
+    >
       {/* fog colour MUST match the background so distant geometry fades into it
           seamlessly — that match is what makes the depth fog actually read */}
       <fog attach="fog" args={["#160a26", 3.5, 16]} />
@@ -146,7 +189,6 @@ const Experience = () => {
             scale={1.2}
           />
           <WitchNook />
-          {import.meta.env.DEV && <Hotspots />}
 
           {/* ground floor plane — y=-2.25 matches GROUND_Y in WitchNook.jsx,
               where all the floor dressing (coat stand, crates, broom) sits */}

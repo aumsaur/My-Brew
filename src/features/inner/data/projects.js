@@ -2,10 +2,12 @@
 // InnerWorld.jsx so the layout is data-driven — tweak positions, sizes and
 // colours here without touching render code.
 
-// Featured project bubbles. `depth` is where each sits along the descent
-// (0 = surface, 1 = deepest); a bubble is centred on screen when innerProgress
-// equals its depth. NOTE: PROJECTS[0].depth feeds the "Projects" navbar target
-// in shared/constants/nav.js (scroll 0.68 + depth * 0.32). Keep them in sync.
+// Featured project bubbles. `depth` is where each sits along the projects
+// descent (0 = first/top, increasing = deeper); a bubble is centred on screen
+// when innerProgress equals its depth. The scroll LENGTH of this section scales
+// with how many projects are here — see shared/constants/journey.js, which
+// turns PROJECTS.length into the projects phase budget and derives the navbar
+// targets (innerScroll(PROJECTS[i].depth)) from these depths.
 export const PROJECTS = [
   {
     id: "p1",
@@ -19,15 +21,15 @@ export const PROJECTS = [
     glow: "rgba(157,78,221,0.4)",
   },
   {
-    id: "p2",
+    id: "p4",
     depth: 0.35,
-    label: "Project Alpha",
-    sub: "Short description here",
-    tags: ["React", "Node.js"],
-    size: 260,
-    xPct: 55,
-    color: "#5a189a",
-    glow: "rgba(90,24,154,0.4)",
+    label: "Qrap",
+    sub: "Scan-to-send links & files across devices",
+    tags: ["Next.js", "Cloudflare", "R2"],
+    size: 245,
+    xPct: 52,
+    color: "#48cae4", // sky-cyan nod to Qrap's brand, a standout among the purples
+    glow: "rgba(72,202,228,0.4)",
   },
   {
     id: "p3",

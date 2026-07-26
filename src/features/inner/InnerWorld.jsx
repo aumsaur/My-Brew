@@ -2,24 +2,46 @@ import { useState } from "react";
 import { Canvas } from "@react-three/fiber";
 import InnerScene from "./InnerScene";
 import { PROJECTS, MINI, PARTICLES, RAYS, TRAVEL } from "./data/projects";
+import {
+  diveProgress,
+  innerProgressOf,
+  floorRevealOf,
+} from "@/shared/constants/journey";
 
 export default function InnerWorld({ scrollProgress }) {
   const [hoveredId, setHoveredId] = useState(null);
 
-  const transitionIn = Math.min(1, Math.max(0, (scrollProgress - 0.55) / 0.13));
-  const innerProgress = Math.min(
-    1,
-    Math.max(0, (scrollProgress - 0.68) / 0.32)
-  );
-  // 3D floor reveals in the last 30% of the liquid descent
-  const floorReveal = Math.max(0, (innerProgress - 0.7) / 0.3);
+  // All timing comes from the data-driven journey layout so the navbar targets
+  // and the actual on-screen positions can't drift apart.
+  const transitionIn = diveProgress(scrollProgress);
+  const innerProgress = innerProgressOf(scrollProgress);
+  // crystals reveal once the descent passes the projects portion
+  const floorReveal = floorRevealOf(innerProgress);
   const htmlOpacity = 1 - floorReveal;
 
   if (transitionIn === 0) return null;
 
-  const clipRx = transitionIn * 150;
-  const clipRy = transitionIn * 150;
   const topGlow = (1 - innerProgress * 0.6) * 0.7;
+
+  // Submersion mask: the dark liquid rises from below with a SOFT, feathered
+  // edge (a ~26% blurred band) instead of a hard ellipse clip — so it reads as
+  // murk closing over you rather than a shape wiping in. The opaque front and
+  // its feather both grow with transitionIn; centred just below the bottom edge
+  // so the curvature suggests liquid welling up around you.
+  const feather = 26; // width of the soft edge band, in % of the gradient radius
+  const front = transitionIn * 132; // leading edge of the reveal
+  const solid = Math.max(0, front - feather); // fully-opaque up to here
+  const mask = `radial-gradient(150% 135% at 50% 112%, #000 ${solid}%, transparent ${front}%)`;
+
+  // Glowing meniscus that rides the rising boundary — a luminous crest tracking
+  // the SAME gradient geometry as the mask, so it sits exactly on the liquid's
+  // leading edge. Brightest mid-transition (sin curve → 0 at both ends).
+  const ripple = `radial-gradient(150% 135% at 50% 112%,
+    transparent ${front - 9}%,
+    rgba(199,125,255,0.4) ${front - 4}%,
+    rgba(240,214,255,0.9) ${front - 1}%,
+    rgba(199,125,255,0.3) ${front + 2}%,
+    transparent ${front + 7}%)`;
 
   return (
     <div
@@ -27,232 +49,256 @@ export default function InnerWorld({ scrollProgress }) {
         position: "fixed",
         inset: 0,
         zIndex: 10,
-        clipPath: `ellipse(${clipRx}% ${clipRy}% at 50% 100%)`,
-        background: "#060218",
-        overflow: "hidden",
         pointerEvents: transitionIn < 0.6 ? "none" : "auto",
-        opacity: transitionIn,
       }}
     >
-      {/* 3D floor scene — fades in as you reach the bottom */}
-      {floorReveal > 0 && (
-        <Canvas
-          shadows
-          camera={{ position: [0, 5, 8], fov: 55 }}
-          style={{ position: "absolute", inset: 0, opacity: floorReveal }}
-        >
-          {/* crystals only drop/grow once you're actually at the bottom */}
-          <InnerScene play={floorReveal > 0.55} />
-        </Canvas>
-      )}
-
-      {/* HTML liquid world — fades out as floor reveals */}
+      {/* dark liquid world — masked so it wells up from below */}
       <div
         style={{
           position: "absolute",
           inset: 0,
-          opacity: htmlOpacity,
-          pointerEvents: floorReveal > 0.5 ? "none" : "auto",
+          background: "#060218",
+          overflow: "hidden",
+          WebkitMaskImage: mask,
+          maskImage: mask,
         }}
       >
-        {/* Background gradient */}
+        {/* 3D floor scene — fades in as you reach the bottom */}
+        {floorReveal > 0 && (
+          <Canvas
+            shadows
+            gl={{ powerPreference: "high-performance" }}
+            camera={{ position: [0, 5, 8], fov: 55 }}
+            style={{ position: "absolute", inset: 0, opacity: floorReveal }}
+          >
+            {/* crystals only drop/grow once you're actually at the bottom */}
+            <InnerScene play={floorReveal > 0.55} />
+          </Canvas>
+        )}
+
+        {/* HTML liquid world — fades out as floor reveals */}
         <div
           style={{
             position: "absolute",
             inset: 0,
-            background: `radial-gradient(ellipse 90% 45% at 50% -10%, rgba(157,78,221,${topGlow}) 0%, #0d0520 50%, #060218 100%)`,
+            opacity: htmlOpacity,
+            pointerEvents: floorReveal > 0.5 ? "none" : "auto",
           }}
-        />
-
-        {/* Light rays */}
-        {RAYS.map((r) => (
+        >
+          {/* Background gradient */}
           <div
-            key={r.id}
             style={{
               position: "absolute",
-              left: r.left,
-              top: 0,
-              width: r.width,
-              height: "65%",
-              background:
-                "linear-gradient(to bottom, rgba(199,125,255,0.18), rgba(157,78,221,0.06) 60%, transparent)",
-              transform: `rotate(${r.rotate}deg)`,
-              transformOrigin: "top center",
-              animation: `rayShimmer ${r.dur}s ${r.delay}s ease-in-out infinite`,
-              pointerEvents: "none",
+              inset: 0,
+              background: `radial-gradient(ellipse 90% 45% at 50% -10%, rgba(157,78,221,${topGlow}) 0%, #0d0520 50%, #060218 100%)`,
             }}
           />
-        ))}
 
-        {/* Surface glow */}
-        <div
-          style={{
-            position: "absolute",
-            top: 0,
-            left: "50%",
-            transform: "translateX(-50%)",
-            width: "120%",
-            height: "30%",
-            background:
-              "radial-gradient(ellipse at 50% 0%, rgba(199,125,255,0.25) 0%, transparent 70%)",
-            filter: "blur(12px)",
-            opacity: Math.max(0, 1 - innerProgress * 1.2),
-            pointerEvents: "none",
-          }}
-        />
-
-        {/* Ambient particles */}
-        {PARTICLES.map((p) => (
-          <div
-            key={p.id}
-            style={{
-              position: "absolute",
-              left: `${p.xPct}%`,
-              bottom: "-5%",
-              width: p.size,
-              height: p.size,
-              borderRadius: "50%",
-              background: p.color,
-              boxShadow: `0 0 ${p.size * 2}px ${p.color}`,
-              animation: `particleDrift ${p.dur}s ${p.delay}s linear infinite`,
-              pointerEvents: "none",
-            }}
-          />
-        ))}
-
-        {/* Mini decorative bubbles */}
-        {MINI.map((b) => {
-          const yVh = (b.depth - innerProgress) * TRAVEL;
-          return (
+          {/* Light rays */}
+          {RAYS.map((r) => (
             <div
-              key={b.id}
+              key={r.id}
               style={{
                 position: "absolute",
-                left: `${b.xPct}%`,
-                top: `calc(50% + ${yVh}vh)`,
-                width: b.size,
-                height: b.size,
-                marginLeft: -(b.size / 2),
-                marginTop: -(b.size / 2),
+                left: r.left,
+                top: 0,
+                width: r.width,
+                height: "65%",
+                background:
+                  "linear-gradient(to bottom, rgba(199,125,255,0.18), rgba(157,78,221,0.06) 60%, transparent)",
+                transform: `rotate(${r.rotate}deg)`,
+                transformOrigin: "top center",
+                animation: `rayShimmer ${r.dur}s ${r.delay}s ease-in-out infinite`,
                 pointerEvents: "none",
               }}
-            >
-              <div
-                style={{
-                  width: "100%",
-                  height: "100%",
-                  borderRadius: "50%",
-                  border: `1px solid rgba(157,78,221,${b.opacity + 0.1})`,
-                  background: `rgba(157,78,221,${b.opacity * 0.4})`,
-                  animation: `innerSway ${3 + b.id * 0.4}s ${b.id * 0.3}s ease-in-out infinite`,
-                }}
-              />
-            </div>
-          );
-        })}
+            />
+          ))}
 
-        {/* Project bubbles */}
-        {PROJECTS.map((p, i) => {
-          const yVh = (p.depth - innerProgress) * TRAVEL;
-          const isHovered = hoveredId === p.id;
-          return (
+          {/* Surface glow */}
+          <div
+            style={{
+              position: "absolute",
+              top: 0,
+              left: "50%",
+              transform: "translateX(-50%)",
+              width: "120%",
+              height: "30%",
+              background:
+                "radial-gradient(ellipse at 50% 0%, rgba(199,125,255,0.25) 0%, transparent 70%)",
+              filter: "blur(12px)",
+              opacity: Math.max(0, 1 - innerProgress * 1.2),
+              pointerEvents: "none",
+            }}
+          />
+
+          {/* Ambient particles */}
+          {PARTICLES.map((p) => (
             <div
               key={p.id}
               style={{
                 position: "absolute",
                 left: `${p.xPct}%`,
-                top: `calc(50% + ${yVh}vh)`,
+                bottom: "-5%",
                 width: p.size,
                 height: p.size,
-                marginLeft: -(p.size / 2),
-                marginTop: -(p.size / 2),
+                borderRadius: "50%",
+                background: p.color,
+                boxShadow: `0 0 ${p.size * 2}px ${p.color}`,
+                animation: `particleDrift ${p.dur}s ${p.delay}s linear infinite`,
+                pointerEvents: "none",
               }}
-            >
+            />
+          ))}
+
+          {/* Mini decorative bubbles */}
+          {MINI.map((b) => {
+            const yVh = (b.depth - innerProgress) * TRAVEL;
+            return (
               <div
+                key={b.id}
                 style={{
-                  width: "100%",
-                  height: "100%",
-                  animation: `innerFloat ${3.5 + i * 0.4}s ${i * 0.7}s ease-in-out infinite`,
+                  position: "absolute",
+                  left: `${b.xPct}%`,
+                  top: `calc(50% + ${yVh}vh)`,
+                  width: b.size,
+                  height: b.size,
+                  marginLeft: -(b.size / 2),
+                  marginTop: -(b.size / 2),
+                  pointerEvents: "none",
                 }}
               >
                 <div
-                  onMouseEnter={() => setHoveredId(p.id)}
-                  onMouseLeave={() => setHoveredId(null)}
                   style={{
                     width: "100%",
                     height: "100%",
                     borderRadius: "50%",
-                    border: `1.5px solid ${isHovered ? "rgba(255,255,255,0.5)" : p.color}`,
-                    background: `radial-gradient(circle at 37% 33%, rgba(255,255,255,${isHovered ? 0.22 : 0.13}) 0%, ${p.color}22 55%, ${p.color}0d 100%)`,
-                    boxShadow: isHovered
-                      ? `0 0 70px ${p.glow}, 0 0 30px ${p.color}88, inset 0 0 35px ${p.color}33`
-                      : `0 0 45px ${p.glow}, inset 0 0 25px ${p.color}18`,
-                    display: "flex",
-                    flexDirection: "column",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 6,
-                    cursor: "pointer",
-                    transform: `scale(${isHovered ? 1.06 : 1})`,
-                    transition:
-                      "transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease",
-                    padding: "0 20px",
-                    textAlign: "center",
+                    border: `1px solid rgba(157,78,221,${b.opacity + 0.1})`,
+                    background: `rgba(157,78,221,${b.opacity * 0.4})`,
+                    animation: `innerSway ${3 + b.id * 0.4}s ${b.id * 0.3}s ease-in-out infinite`,
+                  }}
+                />
+              </div>
+            );
+          })}
+
+          {/* Project bubbles */}
+          {PROJECTS.map((p, i) => {
+            const yVh = (p.depth - innerProgress) * TRAVEL;
+            const isHovered = hoveredId === p.id;
+            return (
+              <div
+                key={p.id}
+                style={{
+                  position: "absolute",
+                  left: `${p.xPct}%`,
+                  top: `calc(50% + ${yVh}vh)`,
+                  width: p.size,
+                  height: p.size,
+                  marginLeft: -(p.size / 2),
+                  marginTop: -(p.size / 2),
+                }}
+              >
+                <div
+                  style={{
+                    width: "100%",
+                    height: "100%",
+                    animation: `innerFloat ${3.5 + i * 0.4}s ${i * 0.7}s ease-in-out infinite`,
                   }}
                 >
-                  <span
-                    style={{
-                      color: "#fff",
-                      fontSize: 18,
-                      fontWeight: 700,
-                      letterSpacing: 2,
-                      textTransform: "uppercase",
-                    }}
-                  >
-                    {p.label}
-                  </span>
-                  <span
-                    style={{
-                      color: "rgba(255,255,255,0.5)",
-                      fontSize: 11,
-                      letterSpacing: 1,
-                    }}
-                  >
-                    {p.sub}
-                  </span>
                   <div
+                    onMouseEnter={() => setHoveredId(p.id)}
+                    onMouseLeave={() => setHoveredId(null)}
                     style={{
+                      width: "100%",
+                      height: "100%",
+                      borderRadius: "50%",
+                      border: `1.5px solid ${isHovered ? "rgba(255,255,255,0.5)" : p.color}`,
+                      background: `radial-gradient(circle at 37% 33%, rgba(255,255,255,${isHovered ? 0.22 : 0.13}) 0%, ${p.color}22 55%, ${p.color}0d 100%)`,
+                      boxShadow: isHovered
+                        ? `0 0 70px ${p.glow}, 0 0 30px ${p.color}88, inset 0 0 35px ${p.color}33`
+                        : `0 0 45px ${p.glow}, inset 0 0 25px ${p.color}18`,
                       display: "flex",
-                      gap: 4,
-                      flexWrap: "wrap",
+                      flexDirection: "column",
+                      alignItems: "center",
                       justifyContent: "center",
-                      marginTop: 4,
+                      gap: 6,
+                      cursor: "pointer",
+                      transform: `scale(${isHovered ? 1.06 : 1})`,
+                      transition:
+                        "transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease",
+                      padding: "0 20px",
+                      textAlign: "center",
                     }}
                   >
-                    {p.tags.map((t) => (
-                      <span
-                        key={t}
-                        style={{
-                          fontSize: 9,
-                          letterSpacing: 1,
-                          textTransform: "uppercase",
-                          color: p.color,
-                          border: `1px solid ${p.color}66`,
-                          borderRadius: 3,
-                          padding: "1px 5px",
-                          background: `${p.color}15`,
-                        }}
-                      >
-                        {t}
-                      </span>
-                    ))}
+                    <span
+                      style={{
+                        color: "#fff",
+                        fontSize: 18,
+                        fontWeight: 700,
+                        letterSpacing: 2,
+                        textTransform: "uppercase",
+                      }}
+                    >
+                      {p.label}
+                    </span>
+                    <span
+                      style={{
+                        color: "rgba(255,255,255,0.5)",
+                        fontSize: 11,
+                        letterSpacing: 1,
+                      }}
+                    >
+                      {p.sub}
+                    </span>
+                    <div
+                      style={{
+                        display: "flex",
+                        gap: 4,
+                        flexWrap: "wrap",
+                        justifyContent: "center",
+                        marginTop: 4,
+                      }}
+                    >
+                      {p.tags.map((t) => (
+                        <span
+                          key={t}
+                          style={{
+                            fontSize: 9,
+                            letterSpacing: 1,
+                            textTransform: "uppercase",
+                            color: p.color,
+                            border: `1px solid ${p.color}66`,
+                            borderRadius: 3,
+                            padding: "1px 5px",
+                            background: `${p.color}15`,
+                          }}
+                        >
+                          {t}
+                        </span>
+                      ))}
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
+
+      {/* glowing surface ripple riding the rising boundary (unmasked, on top) */}
+      {transitionIn < 1 && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            background: ripple,
+            filter: "blur(4px)",
+            mixBlendMode: "screen",
+            opacity: Math.sin(transitionIn * Math.PI),
+            pointerEvents: "none",
+          }}
+        />
+      )}
     </div>
   );
 }

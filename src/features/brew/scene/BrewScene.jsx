@@ -6,7 +6,7 @@ import { Select } from "@react-three/postprocessing";
 import { useBrew } from "@/features/brew/store";
 import { INGREDIENTS } from "@/features/brew/data/ingredients";
 import IngredientModel from "./IngredientModel";
-import Vessel from "./Vessel";
+import ServedVessel from "./RecipeVessel";
 import StirStick from "./StirStick";
 import BrewFX from "@/features/brew/scene/Cauldron/BrewFX";
 
@@ -120,7 +120,7 @@ function RisingVessel({ potion, exiting, onExited }) {
     >
       {/* glow only while hovering (signals it's clickable to inspect) */}
       <Select enabled={hovered && !exiting}>
-        <Vessel vessel={potion.vessel} color={potion.color} />
+        <ServedVessel recipeId={potion.recipeId} vessel={potion.vessel} color={potion.color} />
       </Select>
       <pointLight color={potion.color} intensity={1.6} distance={4} decay={2} />
     </group>
@@ -145,6 +145,15 @@ function BrewProduct() {
   );
 }
 
+// Drives the held pour: while an ingredient is being poured, tops up its amount
+// every frame (the store clamps + reblends the color). Lives in the canvas so it
+// shares the render loop.
+function PourController() {
+  const pourTick = useBrew((s) => s.pourTick);
+  useFrame((_, delta) => pourTick(Math.min(delta, 0.05)));
+  return null;
+}
+
 // All the in-canvas brewing reactions, mounted once in the Experience scene.
 export default function BrewScene() {
   return (
@@ -153,6 +162,7 @@ export default function BrewScene() {
       <FallingIngredients />
       <BrewProduct />
       <StirStick />
+      <PourController />
     </>
   );
 }

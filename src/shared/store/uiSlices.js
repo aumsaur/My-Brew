@@ -13,6 +13,35 @@ export const overlayMenuSlice = (set, get) => ({
     })),
 });
 
+// The lectern grimoire: clicking it flies the camera to the book (a virtual,
+// non-scroll route) and fades in the book-content overlay. See Experience.jsx
+// (CameraRig book blend) + GrimoireOverlay.jsx.
+export const grimoireSlice = (set) => ({
+  isBookOpen: false,
+  openBook: () =>
+    set(({ grimoireStore }) => ({
+      grimoireStore: { ...grimoireStore, isBookOpen: true },
+    })),
+  closeBook: () =>
+    set(({ grimoireStore }) => ({
+      grimoireStore: { ...grimoireStore, isBookOpen: false },
+    })),
+});
+
+// The workshop map: a fixed parchment chart of the scene, toggled by the
+// rolled-scroll button. See features/map/WorkshopMap.jsx.
+export const mapSlice = (set) => ({
+  isMapOpen: false,
+  toggleMap: () =>
+    set(({ mapStore }) => ({
+      mapStore: { ...mapStore, isMapOpen: !mapStore.isMapOpen },
+    })),
+  closeMap: () =>
+    set(({ mapStore }) => ({
+      mapStore: { ...mapStore, isMapOpen: false },
+    })),
+});
+
 export const playerSlice = (set, get) => ({
   isPlaying: false,
   startPlaying: () =>

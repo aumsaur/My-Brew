@@ -1,8 +1,10 @@
 import { Html } from "@react-three/drei";
 import { toRoman } from "@/shared/utils/lib";
 
-// Hover detail: brand logo + name + Roman-numeral years
-export default function InfoCard({ data, top }) {
+// Hover detail: brand logo + name + Roman-numeral years. Kept mounted always and
+// cross-faded via the `hovered` prop (the floating NameLabel fades out as this
+// fades in), so don't gate it behind `{hovered && ...}` at the call site.
+export default function InfoCard({ data, top, hovered = false }) {
   return (
     <Html
       center
@@ -25,7 +27,10 @@ export default function InfoCard({ data, top }) {
           boxShadow: `0 0 20px ${data.color}66`,
           fontFamily: "'Cinzel', Georgia, serif",
           color: "#f4ecff",
-          transform: "translateY(-6px)",
+          // cross-fade with NameLabel: dissolve in + a subtle rise on hover
+          opacity: hovered ? 1 : 0,
+          transform: hovered ? "translateY(-6px)" : "translateY(2px)",
+          transition: "opacity 0.28s ease, transform 0.28s ease",
         }}
       >
         <svg
@@ -35,7 +40,9 @@ export default function InfoCard({ data, top }) {
           style={{ flex: "0 0 auto" }}
           aria-hidden="true"
         >
-          <path d={data.icon.path} fill={`#${data.icon.hex}`} />
+          {/* tint with the skill colour, not the brand hex — some brand icons
+            (e.g. Three.js = #000000) are black and vanish on the dark card */}
+        <path d={data.icon.path} fill={data.color} />
         </svg>
         <div style={{ textAlign: "left" }}>
           <div

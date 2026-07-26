@@ -1,65 +1,70 @@
-import * as THREE from "three";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useFrame } from "@react-three/fiber";
 import { useCursor } from "@react-three/drei";
 import { Select } from "@react-three/postprocessing";
 import { useBrew } from "@/features/brew/store";
+import { POT_CAPACITY, MIN_FILL_RATIO } from "@/features/brew/data/recipes";
 
-const TWO_PI = Math.PI * 2;
-const STIR_TURNS = 2; // full sweeps around the cauldron per stir
-const STIR_DUR = 2.4; // seconds — stir runs this long, THEN the product appears
+const MIN_FILL = POT_CAPACITY * MIN_FILL_RATIO;
 
-// A wooden stir stick resting in the cauldron. Click it to brew: it stirs the
-// pot for STIR_DUR seconds (ease-out) and only THEN reveals the rising product.
-// Driven by the store's brewPulse (bumped by startStir).
+const STIR_HOLD = 1.6; // seconds of holding the stick to complete a stir
+
+// A wooden stir stick resting in the cauldron. PRESS AND HOLD it to stir: the
+// stick spins and the stir gauge fills over STIR_HOLD seconds, then the brew is
+// judged (store.serve()). There must be something poured in first (beginStir
+// guards it). Progress persists between holds, so you can stir in bursts.
 export default function StirStick() {
-  const stir = useRef(); // group we spin to stir
-  const startRot = useRef(0); // rotation when this stir began
-  const elapsed = useRef(0);
-  const spinning = useRef(false);
-  const prevPulse = useRef(0);
+  const stir = useRef(); // group we spin while stirring
   const [hovered, setHovered] = useState(false);
+  const [holding, setHolding] = useState(false);
 
-  const startStir = useBrew((s) => s.startStir);
-  const brew = useBrew((s) => s.brew);
-  const brewPulse = useBrew((s) => s.brewPulse);
-  const canBrew = useBrew(
-    (s) => s.added.length >= 1 && !s.potion && !s.stirring
+  const beginStir = useBrew((s) => s.beginStir);
+  const addStir = useBrew((s) => s.addStir);
+  const canStir = useBrew(
+    (s) =>
+      s.phase !== "served" &&
+      Object.values(s.pours).reduce((a, b) => a + b, 0) >= MIN_FILL
   );
 
-  useCursor(hovered && canBrew);
+  useCursor((hovered && canStir) || holding);
 
+  // advance the stir while held (frame-rate independent)
   useFrame((_, delta) => {
-    const g = stir.current;
-    if (!g) return;
-    // a stir kicks off STIR_TURNS sweeps over STIR_DUR seconds, easing out and
-    // stopping exactly at the resting pose; on completion the product is brewed
-    if (brewPulse !== prevPulse.current) {
-      prevPulse.current = brewPulse;
-      startRot.current = g.rotation.y;
-      elapsed.current = 0;
-      spinning.current = true;
-    }
-    if (spinning.current) {
-      elapsed.current += delta;
-      const k = Math.min(1, elapsed.current / STIR_DUR);
-      const ease = 1 - Math.pow(1 - k, 3); // easeOutCubic
-      g.rotation.y = startRot.current + ease * TWO_PI * STIR_TURNS;
-      if (k >= 1) {
-        spinning.current = false;
-        brew(); // stir done → reveal the product
-      }
-    }
+    if (!holding) return;
+    if (useBrew.getState().phase !== "stirring") return; // done / served
+    if (stir.current) stir.current.rotation.y += delta * 7;
+    addStir(Math.min(delta, 0.05) / STIR_HOLD);
   });
 
-  const lit = hovered && canBrew;
+  // release safety — catch the pointerup even if it lands off the stick
+  useEffect(() => {
+    if (!holding) return;
+    const up = () => setHolding(false);
+    window.addEventListener("pointerup", up);
+    window.addEventListener("pointercancel", up);
+    return () => {
+      window.removeEventListener("pointerup", up);
+      window.removeEventListener("pointercancel", up);
+    };
+  }, [holding]);
+
+  const lit = (hovered && canStir) || holding;
 
   return (
     <group
       position={[0, 0.25, 0]}
-      onClick={(e) => {
+      onPointerDown={(e) => {
         e.stopPropagation();
-        if (canBrew) startStir();
+        const started = beginStir();
+        if (started || useBrew.getState().phase === "stirring") {
+          e.target?.setPointerCapture?.(e.pointerId);
+          setHolding(true);
+        }
+      }}
+      onPointerUp={(e) => {
+        e.stopPropagation();
+        e.target?.releasePointerCapture?.(e.pointerId);
+        setHolding(false);
       }}
       onPointerOver={(e) => {
         e.stopPropagation();
@@ -67,17 +72,12 @@ export default function StirStick() {
       }}
       onPointerOut={() => setHovered(false)}
     >
-      {/* glow only while hovering a clickable stick */}
-      <Select enabled={hovered && canBrew}>
+      <Select enabled={lit}>
         <group ref={stir}>
-          {/* placed by its two endpoints: grip ≈ (z 0.85, y 0.5) juts OUT over
-              the rim toward the camera-side, tip ≈ (z 0, y -0.7) plunges into
-              the pink near the center. Lean is in the Z axis so it reads as a
-              clear diagonal from the default front view (the X axis points at
-              that camera, which is why an X-lean looked vertical).
-              (midpoint z0.425,y-0.10 · lean +0.616 rad about X · length 1.47) */}
+          {/* grip juts OUT over the rim toward the camera side, tip plunges into
+              the near-center of the liquid. */}
           <group position={[-0.5, -0.5, 0.75]} rotation={[0.156, 0, 0]}>
-            {/* shaft — grip end up/out, tip end down into the liquid */}
+            {/* shaft */}
             <mesh position={[0, 0, 0]} castShadow>
               <cylinderGeometry args={[0.04, 0.05, 1.47, 6]} />
               <meshStandardMaterial

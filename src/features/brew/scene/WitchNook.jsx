@@ -1,8 +1,11 @@
 import * as THREE from "three";
-import { useRef, useMemo } from "react";
+import { useRef, useMemo, useState } from "react";
 import { useFrame } from "@react-three/fiber";
-import { Sparkles } from "@react-three/drei";
+import { Sparkles, useCursor } from "@react-three/drei";
+import { Select } from "@react-three/postprocessing";
 import LowPolyFire from "@/shared/components/LowPolyFire";
+import { useStore } from "@/shared/store/ui";
+import { useBrew } from "@/features/brew/store";
 
 // Outer-scene dressing: a witch's nook around the cauldron. Floating candles,
 // an open spellbook, potion bottles and a hat resting on the floor — cozy
@@ -66,10 +69,19 @@ function FloatingCandle({ pos, h = 0.5 }) {
 }
 
 // ── An open spellbook lying on the floor, faintly glowing, page flicking ─────
-function Spellbook({ pos, rot = 0 }) {
+// Pass `onActivate` to make it THE interactive grimoire: it highlights on hover
+// (glow + outline, like the broom/stir-stick) and opens the Grimoire nav on
+// click. Without it, it's just glowing dressing.
+function Spellbook({ pos, rot = 0, onActivate }) {
   const page = useRef();
   const sigil = useRef();
+  const pageL = useRef();
+  const pageR = useRef();
+  const glow = useRef();
   const seed = useMemo(() => Math.random() * 10, []);
+  const [hovered, setHovered] = useState(false);
+  const interactive = !!onActivate;
+  useCursor(interactive && hovered);
 
   useFrame(({ clock }) => {
     const t = clock.elapsedTime + seed;
@@ -79,15 +91,22 @@ function Spellbook({ pos, rot = 0 }) {
       const lift = cycle < 0.35 ? Math.sin((cycle / 0.35) * Math.PI) : 0;
       page.current.rotation.z = -lift * Math.PI * 0.9;
     }
-    // a rune sigil hovers and slowly turns above the open book
+    // a rune sigil hovers and slowly turns above the open book — it lifts and
+    // spins faster while hovered, so the book feels like it "wakes" to the cursor
     if (sigil.current) {
-      sigil.current.rotation.z = t * 0.3;
-      sigil.current.position.y = 0.32 + Math.sin(t * 1.2) * 0.04;
+      sigil.current.rotation.z = t * (hovered ? 0.9 : 0.3);
+      sigil.current.position.y =
+        (hovered ? 0.42 : 0.32) + Math.sin(t * 1.2) * 0.04;
     }
+    // brighten the pages + glow light on hover (invites the click)
+    const em = 0.5 + (hovered ? 0.85 : 0);
+    if (pageL.current) pageL.current.material.emissiveIntensity = em;
+    if (pageR.current) pageR.current.material.emissiveIntensity = em;
+    if (glow.current) glow.current.intensity = 0.9 + (hovered ? 1.8 : 0);
   });
 
-  return (
-    <group position={pos} rotation={[0, rot, 0]}>
+  const book = (
+    <>
       {/* leather cover, slightly open like a tented book */}
       <mesh
         rotation={[-Math.PI / 2, 0, 0.04]}
@@ -106,7 +125,7 @@ function Spellbook({ pos, rot = 0 }) {
         <meshStandardMaterial color="#3a2418" roughness={0.8} />
       </mesh>
       {/* glowing pages */}
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[-0.3, 0.05, 0]}>
+      <mesh ref={pageL} rotation={[-Math.PI / 2, 0, 0]} position={[-0.3, 0.05, 0]}>
         <planeGeometry args={[0.58, 0.8]} />
         <meshStandardMaterial
           color="#f3e9cf"
@@ -116,7 +135,7 @@ function Spellbook({ pos, rot = 0 }) {
           side={THREE.DoubleSide}
         />
       </mesh>
-      <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0.3, 0.05, 0]}>
+      <mesh ref={pageR} rotation={[-Math.PI / 2, 0, 0]} position={[0.3, 0.05, 0]}>
         <planeGeometry args={[0.58, 0.8]} />
         <meshStandardMaterial
           color="#f3e9cf"
@@ -144,7 +163,34 @@ function Spellbook({ pos, rot = 0 }) {
         <torusGeometry args={[0.16, 0.012, 6, 6]} />
         <meshBasicMaterial color="#9d4edd" toneMapped={false} />
       </mesh>
+    </>
+  );
+
+  return (
+    <group
+      position={pos}
+      rotation={[0, rot, 0]}
+      onPointerOver={
+        interactive
+          ? (e) => {
+              e.stopPropagation();
+              setHovered(true);
+            }
+          : undefined
+      }
+      onPointerOut={interactive ? () => setHovered(false) : undefined}
+      onClick={
+        interactive
+          ? (e) => {
+              e.stopPropagation();
+              onActivate();
+            }
+          : undefined
+      }
+    >
+      {interactive ? <Select enabled={hovered}>{book}</Select> : book}
       <pointLight
+        ref={glow}
         position={[0, 0.3, 0]}
         color="#caa24a"
         intensity={0.9}
@@ -466,6 +512,249 @@ function Broom() {
   );
 }
 
+// ── A sentient broom: rests leaning on the crate pile, wakes on click ────────
+// At rest it leans ~21° with its bristles on the floor and does NOT move. Click
+// it and it stands up and sweeps the floor — upright, bristles skimming the
+// ground, rocking side-to-side in sweep strokes and hopping as it roams the nook
+// for a while — then settles back against the pile. Rest↔sweep poses are blended
+// with a position lerp + quaternion slerp so getting up and settling are smooth.
+
+// Rest pose: a ~21° lean, handle tipping toward -X/-Z (into the pile).
+const BROOM_REST_QUAT = new THREE.Quaternion().setFromEuler(
+  new THREE.Euler(-0.22, 0, 0.3, "XYZ")
+);
+// The broom group is centre-pivoted (Broom is offset -1.1 inside it), so place
+// the group centre such that the bristle end lands on the floor just in front of
+// the crate pile (world ≈ [-3.05, floor, -1.0]).
+const BROOM_REST_POS = new THREE.Vector3(-3.05, GROUND_Y, -1.0).add(
+  new THREE.Vector3(0, 1.1, 0).applyQuaternion(BROOM_REST_QUAT)
+);
+
+// wake sequence timing: eases up, stays lively a good while, then eases home
+const BROOM_RAMP = 1.6; // lift-off
+const BROOM_HOLD = 18; // seconds of free roaming
+const BROOM_DOWN = 2.6; // flight back + settle
+// scratch reused every frame (no per-frame allocations)
+const _bpos = new THREE.Vector3();
+const _bquat = new THREE.Quaternion();
+const _btip = new THREE.Quaternion();
+const _byaw = new THREE.Quaternion();
+const _xAxis = new THREE.Vector3(1, 0, 0);
+const _yAxis = new THREE.Vector3(0, 1, 0);
+const _zAxis = new THREE.Vector3(0, 0, 1);
+const _emit = new THREE.Vector3(); // bristle floor-contact point
+const _vel = new THREE.Vector3(); // broom's own velocity (flicks dust along)
+
+const DUST_COUNT = 16;
+// soft round dust sprite, drawn once to a canvas (no external asset needed)
+function makeDustTexture() {
+  const c = document.createElement("canvas");
+  c.width = c.height = 64;
+  const ctx = c.getContext("2d");
+  const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+  g.addColorStop(0, "rgba(255,255,255,1)");
+  g.addColorStop(0.5, "rgba(255,255,255,0.35)");
+  g.addColorStop(1, "rgba(255,255,255,0)");
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+}
+
+function InteractiveBroom() {
+  const grp = useRef();
+  const seed = useMemo(() => Math.random() * 10, []);
+  const [hovered, setHovered] = useState(false);
+  const active = useRef(false); // currently in a wander cycle
+  const startAt = useRef(null); // clock time the cycle began
+  const activation = useRef(0); // 0 = resting/leaning, 1 = fully wandering
+
+  // dust puffs kicked up while sweeping — a small reused pool
+  const dustTex = useMemo(makeDustTexture, []);
+  const dust = useMemo(
+    () =>
+      Array.from({ length: DUST_COUNT }, () => ({
+        pos: new THREE.Vector3(),
+        vel: new THREE.Vector3(),
+        life: 0,
+        max: 1,
+        size: 0.16,
+      })),
+    []
+  );
+  const sprites = useRef([]);
+  const spawnAcc = useRef(0);
+  const prevPos = useRef(new THREE.Vector3());
+
+  useCursor(hovered);
+
+  useFrame(({ clock }, delta) => {
+    const g = grp.current;
+    if (!g) return;
+    const now = clock.elapsedTime;
+
+    // activation envelope: ramp up on click → hold while roaming → ramp down as
+    // it flies home → dormant. Everything else blends off this single 0..1.
+    let target = 0;
+    let e = 0; // seconds since the click
+    if (active.current) {
+      if (startAt.current === null) startAt.current = now;
+      e = now - startAt.current;
+      const total = BROOM_RAMP + BROOM_HOLD + BROOM_DOWN;
+      if (e < BROOM_RAMP) target = e / BROOM_RAMP;
+      else if (e < BROOM_RAMP + BROOM_HOLD) target = 1;
+      else if (e < total) target = 1 - (e - BROOM_RAMP - BROOM_HOLD) / BROOM_DOWN;
+      else {
+        active.current = false;
+        startAt.current = null;
+      }
+    }
+    activation.current = THREE.MathUtils.smoothstep(target, 0, 1);
+    const a = activation.current;
+
+    // ── sweep pose (weight 0 → ignored, broom stays leaning at rest) ──
+    // Awake it stands upright with its bristles skimming the floor, rocking
+    // side-to-side in sweep strokes and hopping lightly as it roams the nook.
+    const t = now + seed;
+    const stroke = t * 2.4; // the sweep rhythm (one swing per ~1.3s)
+    // roam the open floor: variable-speed loop + breathing radius, kept in the
+    // ring between the cauldron and the surrounding clutter
+    const th = t * 0.14 + Math.sin(t * 0.17) * 0.7;
+    const R = 2.2 + Math.sin(t * 0.2) * 0.6;
+    // a quick hop + shiver in the first ~2s, like it's shaking itself awake
+    const wake = active.current ? Math.max(0, 1 - e / 2.0) : 0;
+    // little bounces off the floor, quicker than the sweep swing
+    const hop =
+      Math.abs(Math.sin(stroke)) * 0.05 + Math.max(0, Math.sin(stroke * 2)) * 0.03;
+    _bpos.set(
+      Math.cos(th) * R + Math.sin(t * 0.4) * 0.2,
+      GROUND_Y + 1.08 + hop + wake * Math.sin(e * 20) * 0.1, // bristles ~on the floor
+      Math.sin(th) * R * 0.85 + Math.cos(t * 0.3) * 0.2
+    );
+    // upright, facing its travel, rocking side-to-side (sweep) + a forward push
+    const sway = Math.sin(stroke) * 0.4 + wake * Math.sin(e * 24) * 0.2; // sweep arc
+    const push = 0.12 + Math.sin(stroke * 2) * 0.1; // forward push into each stroke
+    _byaw.setFromAxisAngle(_yAxis, th + Math.PI / 2 + Math.sin(t * 0.5) * 0.2); // heading
+    _btip.setFromAxisAngle(_xAxis, push); // lean forward
+    _bquat.setFromAxisAngle(_zAxis, sway); // sway side-to-side
+    _btip.multiply(_bquat);
+    _bquat.copy(_byaw).multiply(_btip);
+
+    // blend rest ↔ sweep
+    g.position.copy(BROOM_REST_POS).lerp(_bpos, a);
+    g.quaternion.copy(BROOM_REST_QUAT).slerp(_bquat, a);
+
+    // ── swept-up dust ──
+    // emit from the bristle floor-contact point (broom centre + the -1.1 offset,
+    // rotated into world), flicked slightly along the broom's own travel
+    _emit.set(0, -1.1, 0).applyQuaternion(g.quaternion).add(g.position);
+    _vel.copy(g.position).sub(prevPos.current);
+    if (delta > 0) _vel.multiplyScalar(1 / delta);
+    prevPos.current.copy(g.position);
+
+    if (a > 0.25) {
+      spawnAcc.current += delta * 18 * a; // emission rate scales with how awake
+      while (spawnAcc.current >= 1) {
+        spawnAcc.current -= 1;
+        let p = null;
+        for (let j = 0; j < dust.length; j++)
+          if (dust[j].life <= 0) {
+            p = dust[j];
+            break;
+          }
+        if (!p) break;
+        p.pos.copy(_emit);
+        p.pos.x += (Math.random() - 0.5) * 0.18;
+        p.pos.z += (Math.random() - 0.5) * 0.18;
+        p.pos.y = GROUND_Y + 0.03 + Math.random() * 0.05;
+        const ang = Math.random() * Math.PI * 2;
+        const out = 0.15 + Math.random() * 0.25;
+        p.vel.set(
+          Math.cos(ang) * out + _vel.x * 0.25,
+          0.25 + Math.random() * 0.35,
+          Math.sin(ang) * out + _vel.z * 0.25
+        );
+        p.max = 0.7 + Math.random() * 0.6;
+        p.life = p.max;
+        p.size = 0.12 + Math.random() * 0.12;
+      }
+    } else {
+      spawnAcc.current = 0;
+    }
+
+    for (let i = 0; i < dust.length; i++) {
+      const p = dust[i];
+      const s = sprites.current[i];
+      if (!s) continue;
+      if (p.life > 0) {
+        p.life -= delta;
+        p.vel.y -= delta * 0.5; // drift back down
+        p.vel.multiplyScalar(Math.max(0, 1 - delta * 1.4)); // air drag / settle
+        p.pos.addScaledVector(p.vel, delta);
+        if (p.pos.y < GROUND_Y + 0.02) {
+          p.pos.y = GROUND_Y + 0.02;
+          p.vel.y = 0;
+        }
+        const k = Math.max(0, p.life / p.max); // 1 → 0 over its life
+        s.position.copy(p.pos);
+        s.scale.setScalar(p.size * (1.4 - k * 0.6)); // billows out as it fades
+        s.material.opacity = 0.35 * k;
+        s.visible = true;
+      } else if (s.visible) {
+        s.visible = false;
+      }
+    }
+  });
+
+  return (
+    <>
+      <group
+        ref={grp}
+        position={BROOM_REST_POS.toArray()}
+        quaternion={BROOM_REST_QUAT.toArray()}
+        onClick={(e) => {
+          e.stopPropagation();
+          if (!active.current) active.current = true; // wake it (ignored mid-flight)
+          useBrew.getState().reset(); // sweep the cauldron clean — no need to stir first
+        }}
+        onPointerOver={(e) => {
+          e.stopPropagation();
+          setHovered(true);
+        }}
+        onPointerOut={() => setHovered(false)}
+      >
+        {/* pivot around the broom's mid-length, not the bristle end */}
+        <group position={[0, -1.1, 0]}>
+          {/* glow outline on hover, matching the stir stick / other clickables */}
+          <Select enabled={hovered}>
+            <Broom />
+          </Select>
+        </group>
+      </group>
+
+      {/* dust puffs live in world space (not under the moving broom group) */}
+      <group>
+        {dust.map((_, i) => (
+          <sprite
+            key={i}
+            ref={(el) => (sprites.current[i] = el)}
+            visible={false}
+            scale={0}
+          >
+            <spriteMaterial
+              map={dustTex}
+              color="#c9b79a"
+              transparent
+              opacity={0}
+              depthWrite={false}
+              toneMapped={false}
+            />
+          </sprite>
+        ))}
+      </group>
+    </>
+  );
+}
+
 // ── A wooden supply crate (box + corner posts + slats), origin at its centre ─
 // Trim is applied to all four vertical faces (top/bottom band + diagonal brace)
 // so the crate reads as a built box from every angle, not just front/back.
@@ -610,7 +899,7 @@ function Barrel() {
 // ── A reading lectern holding the open spellbook ─────────────────────────────
 // Local base at y=0; a slanted board (tilted back) holds the book, with a ledge
 // lip along the low edge.
-function Lectern({ tilt = 0.72 }) {
+function Lectern({ tilt = 0.72, onActivate }) {
   return (
     <group>
       {/* foot */}
@@ -640,7 +929,7 @@ function Lectern({ tilt = 0.72 }) {
           rotation={[Math.PI / 2, 0, 0]}
           scale={0.6}
         >
-          <Spellbook pos={[0, 0, 0]} rot={0} />
+          <Spellbook pos={[0, 0, 0]} rot={0} onActivate={onActivate} />
         </group>
       </group>
     </group>
@@ -648,6 +937,9 @@ function Lectern({ tilt = 0.72 }) {
 }
 
 export default function WitchNook() {
+  // clicking the lectern grimoire flies the camera in + opens its content
+  const openBook = useStore((s) => s.grimoireStore.openBook);
+
   // candles drift in the air, ringing the cauldron at varying heights
   const candles = [
     { pos: [-2.5, -0.2, 1.4], h: 0.5 },
@@ -669,7 +961,7 @@ export default function WitchNook() {
       <group position={[-2, GROUND_Y, 2.95]} rotation={[0, Math.PI / 1.42, 0]}>
         <CoatStand />
         <group position={[-0.95, 0, 0.15]} rotation={[0, 0.3, 0]}>
-          <Lectern />
+          <Lectern onActivate={openBook} />
         </group>
       </group>
 
@@ -701,12 +993,8 @@ export default function WitchNook() {
           <Crate size={0.42} />
         </group>
       </group>
-      <group
-        position={[-1.55, GROUND_Y + 0.1, 0.7]}
-        rotation={[Math.PI / 2, 0.9, 0]}
-      >
-        <Broom />
-      </group>
+      {/* leans against the crate pile until clicked, then wanders the nook */}
+      <InteractiveBroom />
 
       {/* floor clutter, sitting on the ground plane around the cauldron */}
       <BookStack pos={[2.6, GROUND_Y, 1.6]} rot={-0.4} />

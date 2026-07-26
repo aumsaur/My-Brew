@@ -3,9 +3,18 @@ import "./App.css";
 import Experience from "@/features/brew/Experience";
 import { OverlayButton, OverlayMenu } from "@/shared/components/Overlay";
 import InnerWorld from "@/features/inner/InnerWorld";
+import Hero from "@/features/hero/Hero";
+import GrimoireOverlay from "@/features/grimoire/GrimoireOverlay";
+import WorkshopMap from "@/features/map/WorkshopMap";
 import BrewShelf from "@/features/brew/overlay/BrewShelf";
 import InspectOverlay from "@/features/brew/overlay/InspectOverlay";
 import { useBrew } from "@/features/brew/store";
+import {
+  TOTAL_VH,
+  HERO_END,
+  BREW_END,
+  diveProgress,
+} from "@/shared/constants/journey";
 
 function useScrollProgress() {
   const [progress, setProgress] = useState(0);
@@ -24,11 +33,9 @@ function App() {
   const scrollProgress = useScrollProgress();
   const inspecting = useBrew((s) => s.inspecting);
 
-  // 3D canvas fades out AFTER camera has submerged (scroll 0.55 → 0.68)
-  const canvasOpacity = Math.max(
-    0,
-    1 - Math.max(0, (scrollProgress - 0.55) / 0.13)
-  );
+  // 3D canvas fades out across the dive phase (after the camera has submerged),
+  // crossfading into the InnerWorld mask — both share journey.js's diveProgress
+  const canvasOpacity = 1 - diveProgress(scrollProgress);
 
   return (
     <>
@@ -44,12 +51,12 @@ function App() {
           transition: "filter .3s",
         }}
       >
-        <OverlayButton />
         <div style={{ width: "100%", height: "100%" }}>
           <Experience />
         </div>
-        <OverlayMenu />
-        <BrewShelf visible={scrollProgress < 0.12} />
+        <BrewShelf
+          visible={scrollProgress >= HERO_END && scrollProgress < BREW_END}
+        />
       </div>
 
       <InspectOverlay />
@@ -78,9 +85,37 @@ function App() {
 
       <InnerWorld scrollProgress={scrollProgress} />
 
-      {/* Scroll spacer — 700vh total journey */}
+      {/* Opening splash — fixed, above the canvas (zIndex 20), below the navbar.
+          Fades + rises away across the hero phase, revealing the cauldron. */}
+      <Hero scrollProgress={scrollProgress} />
+
+      {/* Grimoire content — opens when the lectern book is clicked (zIndex 60,
+          above everything); locks scroll + flies the camera to the book. */}
+      <GrimoireOverlay />
+
+      {/* Rolled-scroll button + the parchment workshop map it unrolls. */}
+      <WorkshopMap />
+
+      {/* Navbar — hoisted above the inner world (zIndex 10) and kept fixed, so
+          it stays visible and clickable across the ENTIRE journey, not just
+          while the 3D canvas is up. Wrapper is click-through; the button and
+          (when open) the menu panel re-enable pointer events themselves. */}
       <div
-        style={{ height: "700vh", pointerEvents: "none" }}
+        style={{
+          position: "fixed",
+          inset: 0,
+          zIndex: 50,
+          pointerEvents: "none",
+        }}
+      >
+        <OverlayButton />
+        <OverlayMenu />
+      </div>
+
+      {/* Scroll spacer — total journey height is data-driven (grows with the
+          number of projects); see shared/constants/journey.js */}
+      <div
+        style={{ height: `${TOTAL_VH}vh`, pointerEvents: "none" }}
         aria-hidden="true"
       />
     </>
