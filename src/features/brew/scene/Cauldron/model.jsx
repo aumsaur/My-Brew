@@ -15,8 +15,13 @@ import {
 import { useMemo, useRef, useState } from "react";
 import { useBrew } from "@/features/brew/store";
 
-const modelPath = "./src/assets/models/cauldron.glb";
-const liquidNormalPath = "./src/assets/normals/water.jpg";
+// Served from public/ (not src/assets) and prefixed with Vite's BASE_URL: a
+// bare "./src/assets/..." string is never picked up by Vite's build pipeline
+// (it only works in dev, where Vite happens to serve the whole project root),
+// so the production build was silently falling back to index.html for both
+// of these — same class of bug as the ingredient GLBs' hardcoded "/models/".
+const modelPath = `${import.meta.env.BASE_URL}models/cauldron.glb`;
+const liquidNormalPath = `${import.meta.env.BASE_URL}normals/water.jpg`;
 
 // Target bloom luminance for the liquid. emissiveIntensity is derived each frame
 // as LIQUID_GLOW / colorLuminance so every brew color blooms to about this much.

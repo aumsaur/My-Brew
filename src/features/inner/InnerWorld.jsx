@@ -63,18 +63,27 @@ export default function InnerWorld({ scrollProgress }) {
           maskImage: mask,
         }}
       >
-        {/* 3D floor scene — fades in as you reach the bottom */}
-        {floorReveal > 0 && (
-          <Canvas
-            shadows
-            gl={{ powerPreference: "high-performance" }}
-            camera={{ position: [0, 5, 8], fov: 55 }}
-            style={{ position: "absolute", inset: 0, opacity: floorReveal }}
-          >
-            {/* crystals only drop/grow once you're actually at the bottom */}
-            <InnerScene play={floorReveal > 0.55} />
-          </Canvas>
-        )}
+        {/* 3D floor scene. Mounted as soon as InnerWorld itself is (i.e. from
+            the moment the dive starts), NOT gated behind `floorReveal > 0` —
+            creating the WebGL context and compiling its shaders is a genuine
+            hitch: measured a reproducible 2.7-3.8s single-frame stall right
+            at the moment floorReveal first crossed 0 (i.e. exactly when the
+            user scrolls into the crystal hall, mid-gesture). Mounting it here
+            instead spends that cost much earlier — overlapping the dive/mask
+            transition, while a second WebGL context is cheap to spin up next
+            to the already-active brew canvas — and gives it the whole
+            projects section to be ready before it's ever visible. Its own
+            frameloop stays paused until there's something to show. */}
+        <Canvas
+          shadows
+          gl={{ powerPreference: "high-performance" }}
+          camera={{ position: [0, 5, 8], fov: 55 }}
+          frameloop={floorReveal > 0.01 ? "always" : "never"}
+          style={{ position: "absolute", inset: 0, opacity: floorReveal }}
+        >
+          {/* crystals only drop/grow once you're actually at the bottom */}
+          <InnerScene play={floorReveal > 0.55} />
+        </Canvas>
 
         {/* HTML liquid world — fades out as floor reveals */}
         <div
@@ -159,11 +168,15 @@ export default function InnerWorld({ scrollProgress }) {
                 style={{
                   position: "absolute",
                   left: `${b.xPct}%`,
-                  top: `calc(50% + ${yVh}vh)`,
+                  top: "50%",
                   width: b.size,
                   height: b.size,
-                  marginLeft: -(b.size / 2),
-                  marginTop: -(b.size / 2),
+                  // transform instead of an animated `top`/margin: `top` is a
+                  // layout property, so a scroll-driven change to it forces a
+                  // reflow + full repaint of this (glowing, blurred) element
+                  // every single scroll tick. transform is compositor-only —
+                  // the browser can reposition it without repainting.
+                  transform: `translate(-50%, calc(-50% + ${yVh}vh))`,
                   pointerEvents: "none",
                 }}
               >
@@ -191,11 +204,12 @@ export default function InnerWorld({ scrollProgress }) {
                 style={{
                   position: "absolute",
                   left: `${p.xPct}%`,
-                  top: `calc(50% + ${yVh}vh)`,
+                  top: "50%",
                   width: p.size,
                   height: p.size,
-                  marginLeft: -(p.size / 2),
-                  marginTop: -(p.size / 2),
+                  // see the MINI bubbles above — transform avoids a per-scroll-
+                  // tick reflow + repaint of this glowing bubble
+                  transform: `translate(-50%, calc(-50% + ${yVh}vh))`,
                 }}
               >
                 <div
@@ -208,6 +222,10 @@ export default function InnerWorld({ scrollProgress }) {
                   <div
                     onMouseEnter={() => setHoveredId(p.id)}
                     onMouseLeave={() => setHoveredId(null)}
+                    onClick={() => {
+                      if (p.url) window.open(p.url, "_blank", "noopener,noreferrer");
+                      else if (p.home) window.scrollTo({ top: 0, behavior: "smooth" });
+                    }}
                     style={{
                       width: "100%",
                       height: "100%",
@@ -222,7 +240,7 @@ export default function InnerWorld({ scrollProgress }) {
                       alignItems: "center",
                       justifyContent: "center",
                       gap: 6,
-                      cursor: "pointer",
+                      cursor: p.url || p.home ? "pointer" : "default",
                       transform: `scale(${isHovered ? 1.06 : 1})`,
                       transition:
                         "transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease",
@@ -277,6 +295,20 @@ export default function InnerWorld({ scrollProgress }) {
                         </span>
                       ))}
                     </div>
+                    {(p.url || p.home) && (
+                      <span
+                        style={{
+                          color: p.color,
+                          fontSize: 10,
+                          letterSpacing: 1,
+                          marginTop: 2,
+                          opacity: isHovered ? 0.9 : 0,
+                          transition: "opacity 0.3s ease",
+                        }}
+                      >
+                        {p.url ? "visit ↗" : "back to top ↑"}
+                      </span>
+                    )}
                   </div>
                 </div>
               </div>

@@ -19,12 +19,34 @@ import {
 function useScrollProgress() {
   const [progress, setProgress] = useState(0);
   useEffect(() => {
+    // Reading scrollHeight forces a layout — doing that on every scroll event
+    // (which can fire dozens of times per second) was a real source of jank on
+    // a page full of filter/mask-image/mix-blend-mode. Cache it and only
+    // recompute on resize (the one thing that can actually change it).
+    let max = document.documentElement.scrollHeight - window.innerHeight;
+    const recomputeMax = () => {
+      max = document.documentElement.scrollHeight - window.innerHeight;
+    };
+    // Coalesce to one React update per animation frame. Some browsers/input
+    // devices fire several "scroll" events between frames; without this each
+    // one triggers its own setState → full App re-render (Hero, InnerWorld's
+    // many bubbles, BrewShelf), which can add up to more re-renders than
+    // frames actually available to paint them in.
+    let queued = false;
     const update = () => {
-      const max = document.documentElement.scrollHeight - window.innerHeight;
-      setProgress(max > 0 ? window.scrollY / max : 0);
+      if (queued) return;
+      queued = true;
+      requestAnimationFrame(() => {
+        queued = false;
+        setProgress(max > 0 ? window.scrollY / max : 0);
+      });
     };
     window.addEventListener("scroll", update, { passive: true });
-    return () => window.removeEventListener("scroll", update);
+    window.addEventListener("resize", recomputeMax, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", update);
+      window.removeEventListener("resize", recomputeMax);
+    };
   }, []);
   return progress;
 }
@@ -36,6 +58,14 @@ function App() {
   // 3D canvas fades out across the dive phase (after the camera has submerged),
   // crossfading into the InnerWorld mask — both share journey.js's diveProgress
   const canvasOpacity = 1 - diveProgress(scrollProgress);
+  // Past the dive, the cauldron scene sits at opacity 0 for the entire rest of
+  // the journey (projects + skills, ~28% of the total scroll) — but a plain
+  // opacity fade doesn't stop it rendering. Experience uses this to pause its
+  // frameloop entirely while invisible, instead of paying for full shadows +
+  // bloom + outline post-processing on a scene nobody can see. A thresholded
+  // boolean (flips twice per journey) rather than the raw opacity, so it
+  // doesn't re-render Experience's subtree on every scroll tick.
+  const sceneActive = canvasOpacity > 0.02;
 
   return (
     <>
@@ -52,7 +82,7 @@ function App() {
         }}
       >
         <div style={{ width: "100%", height: "100%" }}>
-          <Experience />
+          <Experience active={sceneActive} />
         </div>
         <BrewShelf
           visible={scrollProgress >= HERO_END && scrollProgress < BREW_END}

@@ -7,7 +7,8 @@
 // when innerProgress equals its depth. The scroll LENGTH of this section scales
 // with how many projects are here — see shared/constants/journey.js, which
 // turns PROJECTS.length into the projects phase budget and derives the navbar
-// targets (innerScroll(PROJECTS[i].depth)) from these depths.
+// targets (innerScroll(PROJECTS[i].depth)) from these depths. `url` is optional
+// — when present the bubble is clickable and opens the live site in a new tab.
 export const PROJECTS = [
   {
     id: "p1",
@@ -19,6 +20,7 @@ export const PROJECTS = [
     xPct: 47,
     color: "#9d4edd",
     glow: "rgba(157,78,221,0.4)",
+    home: true, // it's this site — clicking it scrolls back to the top instead of opening a link
   },
   {
     id: "p4",
@@ -30,17 +32,19 @@ export const PROJECTS = [
     xPct: 52,
     color: "#48cae4", // sky-cyan nod to Qrap's brand, a standout among the purples
     glow: "rgba(72,202,228,0.4)",
+    url: "https://qrap.vercel.app",
   },
   {
     id: "p3",
     depth: 0.6,
-    label: "Project Beta",
-    sub: "Short description here",
-    tags: ["Python", "FastAPI"],
+    label: "Stocktomate",
+    sub: "Automate a warehouse's SAP-like order-to-ship flow",
+    tags: ["React Three Fiber", "Anime.js"],
     size: 225,
     xPct: 43,
     color: "#c77dff",
     glow: "rgba(199,125,255,0.4)",
+    url: "https://stocktomate.vercel.app",
   },
 ];
 

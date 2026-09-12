@@ -14,7 +14,7 @@ import {
 } from "@react-three/postprocessing";
 import { Environment } from "@react-three/drei";
 import { BlendFunction } from "postprocessing";
-import { Suspense, useRef, useEffect } from "react";
+import { Suspense, useRef, useEffect, memo } from "react";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { HERO_END } from "@/shared/constants/journey";
@@ -155,15 +155,24 @@ function Lights() {
   );
 }
 
-const Experience = () => {
+const Experience = ({ active = true }) => {
   const liquidColor = useBrew((s) => s.color);
 
   return (
     <Canvas
       shadows
       // request the discrete/high-performance GPU (not the integrated chip);
-      // WebGL already renders on the GPU — this just picks the better one
-      gl={{ powerPreference: "high-performance", antialias: true }}
+      // WebGL already renders on the GPU — this just picks the better one.
+      // antialias is dropped: EffectComposer renders through its own
+      // multisampled target below, so the canvas's own AA buffer was pure
+      // waste sitting behind it.
+      gl={{ powerPreference: "high-performance" }}
+      // Past the dive, this whole scene sits at opacity 0 behind the
+      // InnerWorld for the rest of the journey — "never" stops the render
+      // loop entirely instead of paying full shadows+postprocessing cost on
+      // an invisible scene. Scroll state keeps updating via GSAP's
+      // ScrollTrigger regardless, so flipping back to "always" catches up.
+      frameloop={active ? "always" : "never"}
       style={{ width: "100%", height: "100%" }}
     >
       {/* fog colour MUST match the background so distant geometry fades into it
@@ -201,7 +210,11 @@ const Experience = () => {
             <meshStandardMaterial color="#1f1135" />
           </mesh>
 
-          <EffectComposer autoClear={false}>
+          {/* multisampling defaults to 8x on the composer's render target —
+              stacking real MSAA under Bloom+Outline's own blur passes was
+              costing a lot of GPU time for very little visible gain once
+              those passes are already softening the edges. */}
+          <EffectComposer autoClear={false} multisampling={0}>
             {/* glowing outline on hoverable/clickable objects (driven by <Select>) */}
             <Outline
               visibleEdgeColor={0xfff1c0}
@@ -226,4 +239,7 @@ const Experience = () => {
   );
 };
 
-export default Experience;
+// App re-renders on every scroll tick (~60x/sec); Experience's only real
+// input is the `active` boolean (flips twice per journey), so memoizing it
+// stops that heavy scene graph from being reconciled on every one of those.
+export default memo(Experience);

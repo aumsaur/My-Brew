@@ -1,11 +1,34 @@
 import * as THREE from "three";
-import { useMemo } from "react";
+import { useMemo, useEffect } from "react";
+import { useThree } from "@react-three/fiber";
 import { rollSkills } from "@/features/inner/data/skills";
 import SkillNode from "./scene/SkillNode";
 import Ruins from "./scene/Ruins";
 import Particles from "./scene/Particles";
 import Candles from "./scene/Candles";
 import CameraOrbit from "./scene/CameraOrbit";
+
+// This scene's Canvas is mounted well before it's ever visible (InnerWorld.jsx
+// mounts it at the start of the dive, frameloop paused) specifically so its
+// shaders can compile before the reveal — but R3F never calls
+// renderer.render() while frameloop is "never", so nothing actually compiles
+// just from mounting early. Measured: without this, the FIRST real render
+// (when frameloop flips on at the reveal) stalls the main thread for
+// 2.7-3.8s — this scene mixes several distinct material permutations
+// (flat-shaded vs smooth geo forms, standard vs the iridescent
+// meshPhysicalMaterial one cluster type gets) each needing its own shader
+// program, plus up to 9 dynamically-added per-crystal point lights. Forcing
+// the compile explicitly, once, right on mount pays that cost while the dive
+// transition is covering the screen instead of mid-scroll-gesture later.
+function Precompile() {
+  const gl = useThree((s) => s.gl);
+  const scene = useThree((s) => s.scene);
+  const camera = useThree((s) => s.camera);
+  useEffect(() => {
+    gl.compileAsync(scene, camera);
+  }, [gl, scene, camera]);
+  return null;
+}
 
 // ── Scene root ────────────────────────────────────────────────────────────────
 export default function InnerScene({ play = true }) {
@@ -62,6 +85,7 @@ export default function InnerScene({ play = true }) {
       ))}
 
       <CameraOrbit />
+      <Precompile />
     </>
   );
 }

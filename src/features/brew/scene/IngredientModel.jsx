@@ -584,22 +584,27 @@ const KINDS = {
 // rejected on the rest (jug/nut/flower/feather/mandrake/batwing) — none of
 // those have a real thin-core structure for the axis heuristic to find, so it
 // just painted an arbitrary cream patch with no relation to the actual shape.
+// Prefixed with Vite's BASE_URL (not a hardcoded "/") so these still resolve
+// once the app is served from a subpath (e.g. GitHub Pages' "/My-Brew/") —
+// a hardcoded root-absolute path 404s there since it skips the base entirely.
+const MODEL_BASE = `${import.meta.env.BASE_URL}models/`;
+
 const MODEL_URLS = {
-  bean: { url: "/models/bean.glb" },
-  jug: { url: "/models/jug.glb" },
-  nut: { url: "/models/nut.glb" },
-  mushroom: { url: "/models/mushroom.glb", twoTone: true },
+  bean: { url: `${MODEL_BASE}bean.glb` },
+  jug: { url: `${MODEL_BASE}jug.glb` },
+  nut: { url: `${MODEL_BASE}nut.glb` },
+  mushroom: { url: `${MODEL_BASE}mushroom.glb`, twoTone: true },
   // NOTE: no "eyeball" entry — reverted to the hand-built version. Always jar-
   // displayed (small, viewed through tinted brine + glass), and a sphere has
   // no thin/wide distinction for the two-tone axis heuristic to grab onto, so
   // a generic Meshy blob can't approximate hand-placed iris/pupil/vein detail
   // the way it can approximate a mushroom's cap-vs-stem split.
-  berries: { url: "/models/berries.glb", twoTone: true },
-  flower: { url: "/models/flower.glb" },
-  feather: { url: "/models/feather.glb" },
-  mandrake: { url: "/models/mandrake.glb" },
-  leaf: { url: "/models/leaf.glb" },
-  batwing: { url: "/models/batwing.glb" },
+  berries: { url: `${MODEL_BASE}berries.glb`, twoTone: true },
+  flower: { url: `${MODEL_BASE}flower.glb` },
+  feather: { url: `${MODEL_BASE}feather.glb` },
+  mandrake: { url: `${MODEL_BASE}mandrake.glb` },
+  leaf: { url: `${MODEL_BASE}leaf.glb` },
+  batwing: { url: `${MODEL_BASE}batwing.glb` },
 };
 
 // Preload only the registered GLBs, so an empty map (fresh checkout) fetches nothing.
