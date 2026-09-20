@@ -1,5 +1,11 @@
+// The site. One room, one canvas, no scroll journey.
+import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import "./index.css";
-import App from "./App.jsx";
+import CoffeeApp from "@/features/coffee/CoffeeApp";
+import "@/index.css";
 
-createRoot(document.getElementById("root")).render(<App />);
+createRoot(document.getElementById("root")).render(
+  <StrictMode>
+    <CoffeeApp />
+  </StrictMode>
+);
