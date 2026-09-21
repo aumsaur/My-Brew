@@ -32,13 +32,12 @@ import { Select } from "@react-three/postprocessing";
 //
 // WHAT IT SAYS IS THE SITE, NOT THE FURNITURE.
 //
-// It listed the six stations first — milk bar, espresso, roaster, grinder,
+// It listed the six stations first — serve station, espresso, roaster, grinder,
 // beans, cold store — which is a map of the room and not a reason to be
 // here. A shop's sign advertises what you came for. So each board is a part
 // of the PORTFOLIO and the station is only where that part happens to live:
-// `projects` goes to the fridge because the three groceries on its shelves
-// are the projects, and the visitor never needs to know that is what a
-// fridge is for until the door opens.
+// `projects` goes to the cake case, because the three cakes behind its glass
+// are the projects and a case is a thing you are meant to read.
 //
 // Moving between stations is not this thing's job and does not need to be.
 // The beacon points at whatever the brew wants next, and from the room view
@@ -51,20 +50,29 @@ import { Select } from "@react-three/postprocessing";
 // the board's actual tilted corners, so the lean IS one cord running a
 // couple of millimetres shorter, which is what makes a real one crooked.
 const SIGNS = [
-  { key: "fridge", label: "projects", tint: "#41618c", tilt: 0.013 },
+  { key: "display", label: "projects", tint: "#41618c", tilt: 0.013 },
   { key: "beans", label: "make a coffee", tint: "#a85d3d", tilt: -0.01 },
+  // THE COLD STORE LOST ITS RIDE. `projects` used to fly you to the fridge,
+  // because the fridge was where the portfolio hid; now that the cakes have
+  // it, that board goes to the case and the fridge had no sign at all -- and
+  // it stands half outside the overview frame, so clicking it in the room is
+  // not reliably available either. Three boards still clear the machine and
+  // the glass shelf: the third hangs at y 1.273..1.351, the shelf is at 1.13.
+  { key: "fridge", label: "cold store", tint: "#4a7b6b", tilt: 0.008 },
 ];
 // There was a third, "the whole shop", which stepped back to the room view.
 // Measured: it is unreachable. From the room you are already there, and from
 // a station the sign is off screen — the same geometry that killed the
 // per-station signs. Esc does that job and is always available.
 
-// x is pinned between two walls of its own: any further right and the
-// boards run into the machine, whose body reaches x -0.611 and y 1.384; any
-// further left and the hang falls out of the overview frame on a narrower
-// monitor. Losing the arrow wedges gave 58mm back on the right — that is
-// headroom, not a reason to move.
-const X = -0.88;
+// IT HANGS OVER THE SERVE STATION, so it moved with it: the counter group went
+// 150mm inboard and a sign left behind at -0.88 was over bare wall, and
+// worse, sitting in the top-left corner where the standing instructions now
+// live. -0.705 is the serve station's own x.
+//
+// Still clear on both sides: the machine's body now reaches -0.461 and this
+// hang's right edge is -0.535, so 74mm — more than the 58mm it had before.
+const X = -0.705;
 // AGAINST THE WALL, not floating 380mm off it.
 //
 // It used to hang at z=0 on an arm reaching out from the wall, which is how
@@ -104,6 +112,9 @@ const ROPE_R = 0.004;
 // how far a cord runs past the board's edge, so the joint has no seam
 const BITE = 0.005;
 
+// A painted sign is LETTERED, not typeset. The default face read as a
+// browser, which is the one thing a hand-made board should not.
+const FONT = `${import.meta.env.BASE_URL}fonts/Tealand.ttf`;
 const INK = "#fbf3e4";
 const WOOD = "#7d5a3c";
 const TWINE = "#a98a5f";
@@ -203,6 +214,7 @@ function Sign({ label, tint, tilt, y, active, next, onClick }) {
         <Board tint={tint} lit={lit} />
       </Select>
       <Text
+        font={FONT}
         position={[-0.006, 0, face + 0.002]}
         fontSize={0.026}
         letterSpacing={0.04}

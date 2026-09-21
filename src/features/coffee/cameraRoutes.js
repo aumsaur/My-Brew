@@ -46,7 +46,7 @@ export const ROUTES = Object.fromEntries(
 //
 // Close enough that the hero fills the frame — sitting back at 2.4m was what
 // made everything look small. But the counter is 2.2m wide and at 1.5m only
-// 1.98m of it is in shot, which left the milk bar hanging off the left edge
+// 1.98m of it is in shot, which left the serve station hanging off the left edge
 // looking like a mistake rather than a station. 1.66m covers the full 2.2m
 // with a little air, and costs about a tenth of the apparent size.
 export const OVERVIEW = {

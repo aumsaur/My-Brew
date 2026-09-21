@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { uiId } from "@/features/coffee/ids";
 
 // The way back out of a station, and nothing else.
 //
@@ -41,6 +42,7 @@ export default function StationControls({
 
   return (
     <button
+      {...uiId("exit")}
       type="button"
       onClick={() => exit.go?.()}
       onMouseEnter={() => setHover(true)}

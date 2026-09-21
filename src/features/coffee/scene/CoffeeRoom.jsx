@@ -6,14 +6,15 @@ import Grinder from "@/features/coffee/scene/Grinder";
 import Roaster from "@/features/coffee/scene/Roaster";
 import BeanShelf from "@/features/coffee/scene/BeanShelf";
 import Beacon from "@/features/coffee/scene/Beacon";
-import MilkBar from "@/features/coffee/scene/MilkBar";
+import ServeStation from "@/features/coffee/scene/ServeStation";
 import WallSign from "@/features/coffee/scene/WallSign";
 import StashShelf from "@/features/coffee/scene/StashShelf";
 import { PALETTE } from "@/features/coffee/palette";
 import { LAYOUT, steamPose, cupPose } from "@/features/coffee/layout";
 import { useBrewFlow } from "@/features/coffee/useBrewFlow";
 import { clicksSwallowed, swallowClicks } from "@/features/coffee/clickGate";
-import { STASH_BY_NODE } from "@/features/coffee/data/stash";
+import { StationIds } from "@/features/coffee/scene/SceneIds";
+import DisplayCase from "@/features/coffee/scene/DisplayCase";
 
 // The coffee corner: ONE static room. The camera translates between stations
 // rather than the room changing - see ../cameraRoutes.js, whose poses are tuned
@@ -34,9 +35,12 @@ export default function CoffeeRoom({
   picked = false,
   onPicked,
   onHoldEnd,
-  stashItem = null, // fridge shelf item currently in hand
-  onStashItem,
-  onStashDistance,
+  onStashItem, // a cake was clicked -> open its project card
+  // how far the held GRINDER is from the camera, so InspectBlur can focus
+  // on its plane. It was called onStashDistance back when the fridge's
+  // groceries were the only thing that flew to you; the grinder is the
+  // last holder of that behaviour now.
+  onHeldDistance,
 }) {
   const [holding, setHolding] = useState(null); // 'roast' | 'grind' | 'pull' | null
   const [jugUp, setJugUp] = useState(false); // milk jug carried to the wand
@@ -56,17 +60,10 @@ export default function CoffeeRoom({
     onFlow?.(flow);
   }, [onFlow, flow]);
 
-  // Taking a grocery out of the fridge STOCKS its ingredient, and that one
-  // line is what makes the portfolio unavoidable: milk, juice and ice are
-  // only in there, so any drink past a plain espresso means opening the door
-  // and picking up a project. Stocking lives in the flow, NOT in `stashItem`
-  // — that one is cleared by backing out of the card, and putting the carton
-  // down again must not take the milk back off the counter.
-  const stock = flow.stock;
-  useEffect(() => {
-    if (stashItem) stock(STASH_BY_NODE[stashItem]?.stocks);
-  }, [stashItem, stock]);
-
+  // The fridge stocks directly now — StashShelf calls flow.stock. The
+  // bridge that used to live here turned "you are holding a project card"
+  // into "you have the milk", which only made sense while the groceries
+  // were projects in disguise.
   // which station is actively being held, so the rig can switch to its close
   // handling framing rather than watching from across the counter
   useEffect(() => {
@@ -172,6 +169,7 @@ export default function CoffeeRoom({
           machine used to be the hero of the scene and the only station that
           did nothing — the loop ended on a shrug at the thing you were meant
           to be impressed by. */}
+      <StationIds />
       <EspressoMachine
         position={LAYOUT.machine.pos}
         scale={LAYOUT.machine.scale}
@@ -181,9 +179,10 @@ export default function CoffeeRoom({
         lockable={flow.canLock && at("machine")}
         pourable={flow.canPull && at("machine")}
         // the cup leaves with the shot: from the finishing stage on it is at
-        // the milk bar being poured out of, not under the group head
+        // the serve station being poured out of, not under the group head
         cup={flow.locked && flow.stage === "brew"}
         shot={flow.shot}
+        roast={flow.roast}
         brewing={holding === "pull"}
         // the wand is a SECOND target on the machine, because one click on
         // the jug cannot mean both "take this to be steamed" and "pour it".
@@ -211,7 +210,10 @@ export default function CoffeeRoom({
         scale={LAYOUT.roaster.scale}
         running={holding === "roast"}
         enabled={flow.canRoast && at("roaster")}
-        hasBeans={flow.bean !== null}
+        // THE DRUM IS EMPTY UNTIL YOU TIP THE BAG IN. It used to fill on
+        // `bean !== null`, which is the shelf, not the roaster -- so the
+        // station had done its own first step before you got there.
+        hasBeans={flow.charged}
         roast={flow.roast}
         onPointerDown={() => setHolding("roast")}
         onPointerUp={() => {
@@ -219,7 +221,14 @@ export default function CoffeeRoom({
           setHolding(null);
           endHold(); // synchronous: beats the click that follows pointerup
         }}
-        onClick={focus("roaster")}
+        // Standing at it with a bag in hand, the click LOADS instead of
+        // leaving — the one gesture the station is waiting for, on the
+        // object it happens to. Everywhere else it is the focus toggle.
+        onClick={() =>
+          at("roaster") && flow.canLoadRoaster && !clicksSwallowed()
+            ? flow.loadRoaster()
+            : focus("roaster")()
+        }
       />
 
       {/* Handheld, and TWO separate gestures on purpose:
@@ -233,7 +242,7 @@ export default function CoffeeRoom({
         scale={LAYOUT.grinder.scale}
         modelCentre={LAYOUT.grinder.model.c}
         modelHeight={LAYOUT.grinder.model.size[1]}
-        onHeldDistance={onStashDistance}
+        onHeldDistance={onHeldDistance}
         held={picked}
         cranking={holding === "grind"}
         enabled={flow.canGrind}
@@ -258,12 +267,14 @@ export default function CoffeeRoom({
 
       {/* The finishing station: steam, add, ring. This is where a shot
           becomes a drink with a name — see data/drinks.js. */}
-      <MilkBar
-        position={LAYOUT.milkbar.pos}
-        active={flow.canFinish && at("milkbar")}
-        arrived={at("milkbar")}
+      <ServeStation
+        position={LAYOUT.serve.pos}
+        active={flow.canFinish && at("serve")}
+        arrived={at("serve")}
         glass={flow.glass}
         stocked={flow.stocked}
+        shot={flow.shot}
+        roast={flow.roast}
         steamed={flow.steamed}
         stirred={flow.stirred}
         pours={flow.pours}
@@ -282,7 +293,7 @@ export default function CoffeeRoom({
         onStir={flow.stir}
         onPour={flow.pour}
         onServe={flow.serve}
-        onClick={focus("milkbar")}
+        onClick={focus("serve")}
       />
 
       {/* Clicking the bag you already hold PUTS IT BACK. Picking a different
@@ -296,11 +307,25 @@ export default function CoffeeRoom({
         selectedId={flow.bean}
         active={at("beans")}
         onFocus={focus("beans")}
-        onSelect={(id) => (flow.bean === id ? flow.reset() : flow.pickBean(id))}
+        // Clicking the bag you are already carrying puts it BACK, and that
+        // is all it does now: it used to call reset(), which also emptied
+        // the glass you had prepped on the way past.
+        onSelect={(id) =>
+          flow.bean === id ? flow.clearBean() : flow.pickBean(id)
+        }
       />
 
-      {/* The fridge opens as the camera arrives — one gesture, one beat — and
-          what is on its shelves is the portfolio. See data/stash.js. */}
+      {/* THE PORTFOLIO, behind glass in the counter's front. It used to hide
+          on the fridge's shelves dressed as groceries; a cake case is a thing
+          a cafe labels, so the project name on the plate is the furniture
+          doing its job rather than a joke that only lands once. */}
+      <DisplayCase
+        active={at("display")}
+        onPick={onStashItem}
+        onClick={focus("display")}
+      />
+
+      {/* The fridge opens as the camera arrives — one gesture, one beat. */}
       <Fridge
         position={LAYOUT.fridge.pos}
         scale={LAYOUT.fridge.scale}
@@ -308,18 +333,18 @@ export default function CoffeeRoom({
         onClick={focus("fridge")}
       />
 
-      {/* the groceries on its shelves are the portfolio — see data/stash.js */}
+      {/* plain groceries now — the portfolio is in the cake case. Clicking
+          one stocks it straight into the hotbar; see data/stash.js */}
       <StashShelf
         open={focused === "fridge"}
-        activeItem={stashItem}
-        onPick={onStashItem}
-        onHeldDistance={onStashDistance}
+        stocked={flow.stocked}
+        onStock={flow.stock}
       />
 
       {/* points at the next station, so the loop is legible without reading.
           Progress is the HUD's job now — see ui/BrewMeter. */}
       {/* The shop's signage, and the way around the room. Clicking a station
-          only works when the station is on screen — from the milk bar the
+          only works when the station is on screen — from the serve station the
           machine is off frame, so crossing the room took a trip out to the
           overview and back in. These are always up there. */}
       <WallSign

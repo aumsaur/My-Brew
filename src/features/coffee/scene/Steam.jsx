@@ -11,7 +11,7 @@ import * as THREE from "three";
 // happening — in the language the object itself would use.
 //
 // UNITS ARE THE PARENT'S. The machine draws its own in model units inside a
-// group scaled 0.58; the milk bar is at scale 1 and passes metres. Every
+// group scaled 0.58; the serve station is at scale 1 and passes metres. Every
 // size here is a prop for that reason.
 //
 // Non-interactive, always: a plume over a cup sits exactly where the cursor

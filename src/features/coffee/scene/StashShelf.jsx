@@ -1,149 +1,115 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { useGLTF, useCursor, Text } from "@react-three/drei";
 import { Select } from "@react-three/postprocessing";
 import { LAYOUT } from "@/features/coffee/layout";
-import { STASH } from "@/features/coffee/data/stash";
-import { useHeldPose } from "@/features/coffee/useHeldPose";
+import { GROCERIES, FRIDGE_DRESSING } from "@/features/coffee/data/stash";
 
-// The portfolio, sitting on the fridge shelves as groceries.
+// WHAT IS IN THE COLD STORE.
 //
-// These live OUTSIDE the <Fridge> group even though their geometry comes from
-// fridge.glb, because picking one up flies it to the camera in WORLD space. As
-// children of a translated, scaled fridge that would mean converting a
-// camera-space target back through the parent's matrix every frame; at the
-// root the rest pose is just arithmetic on LAYOUT.fridge and the held pose is
-// the camera's own transform. Same reason the grinder is a sibling of the
-// board rather than a child of it.
+// It used to be the portfolio in disguise: three groceries that were secretly
+// projects, each opening a card when you picked it up. The cake case has the
+// portfolio now, and leaving the disguise here meant the projects existed
+// twice over — with a shelf tag reading "Stocktomate" on a jar of sauce,
+// which is the joke the case was brought in to replace.
 //
-// LABELS are the point of the redesign. Before, three unlabelled groceries
-// meant the only way to discover a project was to click a jar and find out —
-// which is not discovery, it is guessing. Now the shelf edge names them, but
-// only once the door is open: the closed fridge is still an innocent
-// appliance, so the reveal survives while the guessing does not.
+// So these are groceries. Clicking one puts its ingredient in your hotbar and
+// nothing else happens: no card, and no flying the item up to the camera,
+// because there is no longer anything on it to read. That is the same
+// argument the bean bags' lift lost — the inventory slot IS the feedback.
+//
+// WHAT IS ON THESE SHELVES IS SUPPLY, not the bar's own containers: a
+// gallon of syrup rather than the pump bottle it fills, a bag-in-box rather
+// than the carton it fills. The reasoning, and why this is NOT the carton
+// bug coming back, is in data/stash.js — read it there before swapping a
+// model back to a bar prop.
+//
+// They live OUTSIDE the <Fridge> group even though the shelf positions come
+// from fridge.glb: the fridge is translated and scaled, and these are
+// authored in real metres, so parenting them would scale them by 0.88.
 const MODEL = `${import.meta.env.BASE_URL}models/fridge.glb`;
-
-// fraction of frame height a held item fills, and where it sits — pushed
-// right so the project card owns the left of the screen
-const FIT = 0.52;
-const FRAME_X = 0.13;
-const FRAME_Y = 0.02;
-const TILT = [0.06, -0.5, 0.03];
+const url = (m) => `${import.meta.env.BASE_URL}models/${m}`;
 
 // front edge of fridge_shelves, in MODEL units — where a shop puts its tags
 const SHELF_FRONT_Z = 0.255;
 
-// Shelf tag, sized in WORLD metres (not model units) so the type stays legible
-// whatever the fridge is scaled to. Bare floating text read as debris; giving
-// it a plate in the project's own colour makes it a printed label, which is
-// what it is — and it borrows the bean bags' treatment, accent plate with pale
-// type, so the two shelves in this room speak the same language.
-const TAG_H = 0.033;
-const TAG_PAD = 0.024;
-const TAG_CHAR = 0.012;
-const TAG_FONT = 0.019;
+// Shelf tag, sized in WORLD metres so the type stays legible whatever the
+// fridge is scaled to. Bare floating text read as debris; a plate behind it
+// makes it a printed label, which is what it is.
+const TAG_H = 0.03;
+const TAG_PAD = 0.022;
+const TAG_CHAR = 0.0108;
+const TAG_FONT = 0.017;
 const TAG_TILT = -0.42; // leaned back, so the face angles up at the viewer
+const TAG_INK = "#f3ece0";
+const TAG_PLATE = "#3f4b45";
+const FONT = `${import.meta.env.BASE_URL}fonts/Tealand.ttf`;
 
-export default function StashShelf({
-  open = false,
-  activeItem = null,
-  onPick,
-  onHeldDistance,
-}) {
-  const reveal = useRef(0);
+const NO_RAYCAST = () => null;
 
-  useFrame((_state, delta) => {
-    // labels fade with the door rather than popping with the click
-    reveal.current +=
-      ((open ? 1 : 0) - reveal.current) * Math.min(1, delta * 6);
-  });
-
-  return (
-    <group>
-      {STASH.map((entry) => (
-        <StashItem
-          key={entry.node}
-          entry={entry}
-          open={open}
-          held={activeItem === entry.node}
-          anyHeld={activeItem !== null}
-          reveal={reveal}
-          onPick={onPick}
-          onHeldDistance={onHeldDistance}
-        />
-      ))}
-    </group>
-  );
+/**
+ * Every mesh in a GLB, cloned so instances do not share a transform — and
+ * RECOLOURED, so they do not share a material either.
+ *
+ * `Object3D.clone()` copies the transform and keeps the material by
+ * reference, which is exactly what you want until two instances want
+ * different colours: tinting the chocolate gallon would otherwise tint the
+ * milk one, in a way that looks like a bad export rather than like aliasing.
+ * The same clone-the-material-not-the-geometry rule the cakes' icing and the
+ * bean bags' labels already follow.
+ *
+ * @param tint  { [materialName]: cssColour } — only the named ones change
+ */
+function useProp(model, tint = null) {
+  const { scene } = useGLTF(url(model));
+  const key = tint ? JSON.stringify(tint) : "";
+  return useMemo(() => {
+    const c = scene.clone(true);
+    if (tint) {
+      c.traverse((o) => {
+        const m = o.material;
+        if (!m || !tint[m.name]) return;
+        const copy = m.clone();
+        copy.color = new THREE.Color(tint[m.name]);
+        o.material = copy;
+      });
+    }
+    const box = new THREE.Box3().setFromObject(c);
+    return { object: c, size: box.getSize(new THREE.Vector3()) };
+    // `key` stands in for `tint`, which is a fresh object literal on every
+    // render of the data module's consumers
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [scene, key]);
 }
 
-function StashItem({
-  entry,
-  open,
-  held,
-  anyHeld,
-  reveal,
-  onPick,
-  onHeldDistance,
-}) {
-  const { nodes, materials } = useGLTF(MODEL);
+/** Where a fridge-model point lands in the world. */
+function worldAt(at) {
+  const f = LAYOUT.fridge;
+  return [
+    f.pos[0] + at[0] * f.scale,
+    f.pos[1] + at[1] * f.scale,
+    f.pos[2] + at[2] * f.scale,
+  ];
+}
+
+function Grocery({ entry, open, taken, reveal, onStock }) {
+  const { nodes } = useGLTF(MODEL);
+  const prop = useProp(entry.model, entry.tint);
   const [hovered, setHovered] = useState(false);
   const label = useRef();
   const plate = useRef();
   const type = useRef();
-  useCursor(hovered && open && !anyHeld);
+  useCursor(hovered && open && !taken);
 
-  const node = nodes[entry.node];
-  const f = LAYOUT.fridge;
-
-  // geometry's own AABB, so framing needs no hand-measured table
-  const { centre, height, baseY } = useMemo(() => {
-    const g = node.geometry;
-    if (!g.boundingBox) g.computeBoundingBox();
-    const bb = g.boundingBox;
-    return {
-      centre: [
-        (bb.min.x + bb.max.x) / 2,
-        (bb.min.y + bb.max.y) / 2,
-        (bb.min.z + bb.max.z) / 2,
-      ],
-      height: bb.max.y - bb.min.y,
-      baseY: bb.min.y,
-    };
-  }, [node]);
-
-  const rest = useMemo(
-    () => [
-      f.pos[0] + node.position.x * f.scale,
-      f.pos[1] + node.position.y * f.scale,
-      f.pos[2] + node.position.z * f.scale,
-    ],
-    [f, node]
-  );
-
-  const { ref, distance } = useHeldPose({
-    held,
-    rest,
-    scale: f.scale,
-    centre,
-    height,
-    fit: FIT,
-    frameX: FRAME_X,
-    frameY: FRAME_Y,
-    tilt: TILT,
-  });
-
-  // the blur has to focus on the plane this item is actually held at, or the
-  // one sharp thing in the shot is the only thing that isn't
-  useEffect(() => {
-    if (held) onHeldDistance?.(distance);
-  }, [held, distance, onHeldDistance]);
+  // the SLOT comes from fridge.glb — that node is where this thing stands —
+  // while the thing itself is its own model at its own scale
+  const slot = nodes[entry.node];
+  const pos = worldAt([slot.position.x, slot.position.y, slot.position.z]);
 
   useFrame(() => {
     if (!label.current) return;
-    // hidden while the item is in your hand — it is no longer on the shelf,
-    // and a price tag floating where it used to be is just debris
-    const o = reveal.current * (held ? 0 : 1);
+    const o = reveal.current * (taken ? 0.25 : 1);
     label.current.visible = o > 0.02;
     if (plate.current) plate.current.opacity = o;
     if (type.current?.material) {
@@ -153,91 +119,121 @@ function StashItem({
     }
   });
 
-  const pickable = open && (!anyHeld || held);
-
-  // Stays a FUNCTION at all times. Handing R3F `undefined` to restore default
-  // picking looks right and is not: it treats an undefined prop value as "no
-  // change", so the mesh keeps whatever it had at mount — here the no-op,
-  // forever, and every click sails past the item into the fridge behind it.
-  const pickableRef = useRef(pickable);
-  pickableRef.current = pickable;
-  const itemRaycast = useCallback(function itemRaycast(raycaster, intersects) {
-    if (!pickableRef.current) return;
-    THREE.Mesh.prototype.raycast.call(this, raycaster, intersects);
-  }, []);
+  const live = open && !taken;
 
   return (
     <>
-      <group
-        ref={ref}
-        position={rest}
-        scale={f.scale}
-        onClick={(e) => {
-          if (!pickable) return;
-          e.stopPropagation();
-          onPick?.(held ? null : entry.node); // click it again to put it back
-        }}
-        onPointerOver={(e) => {
-          if (!pickable) return;
-          e.stopPropagation();
-          setHovered(true);
-        }}
-        onPointerOut={() => setHovered(false)}
-      >
-        <Select enabled={hovered && pickable && !held}>
-          <mesh
-            geometry={node.geometry}
-            material={materials[entry.material]}
-            castShadow
-            raycast={itemRaycast}
-          />
+      <group position={pos}>
+        <Select enabled={hovered && live}>
+          <primitive object={prop.object} />
         </Select>
+        {/* ONE HIT BOX over the whole thing rather than per-mesh raycasts.
+            These props are four to six meshes each — a jug is body, neck,
+            handle, label, cap, fill — and a box round the lot is both
+            cheaper and kinder to aim at than the gaps between them. */}
+        <mesh
+          position={[0, prop.size.y / 2, 0]}
+          visible={live}
+          onClick={(e) => {
+            if (!live) return;
+            e.stopPropagation();
+            onStock?.(entry.stocks);
+          }}
+          onPointerOver={(e) => {
+            if (!live) return;
+            e.stopPropagation();
+            setHovered(true);
+          }}
+          onPointerOut={() => setHovered(false)}
+        >
+          <boxGeometry
+            args={[prop.size.x * 1.1, prop.size.y, prop.size.z * 1.1]}
+          />
+          <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+        </mesh>
       </group>
 
-      {/* Shelf tag. The TEXT is outside any <Select>: the outline pass
-          overrides materials for its mask and discards troika's alpha cutout,
-          so text inside a selection outlines as its bounding rectangle — the
-          "mesh behind the coffee bag" bug. */}
+      {/* The TEXT is outside any <Select>: the outline pass overrides
+          materials for its mask and discards troika's alpha cutout, so text
+          inside a selection outlines as its bounding rectangle. */}
       <group
         ref={label}
-        position={[
-          f.pos[0] + node.position.x * f.scale,
-          f.pos[1] + (node.position.y + baseY) * f.scale + 0.016,
-          f.pos[2] + SHELF_FRONT_Z * f.scale,
-        ]}
+        position={worldAt([slot.position.x, slot.position.y, SHELF_FRONT_Z])}
         rotation={[TAG_TILT, 0, 0]}
       >
         <mesh raycast={NO_RAYCAST}>
           <boxGeometry
-            args={[
-              TAG_PAD + entry.project.label.length * TAG_CHAR,
-              TAG_H,
-              0.004,
-            ]}
+            args={[TAG_PAD + entry.label.length * TAG_CHAR, TAG_H, 0.004]}
           />
           <meshStandardMaterial
             ref={plate}
-            color={entry.project.color}
-            roughness={0.55}
+            color={TAG_PLATE}
+            roughness={0.7}
             transparent
           />
         </mesh>
         <Text
           ref={type}
-          position={[0, 0, 0.0028]}
+          font={FONT}
+          position={[0, 0, 0.004]}
           fontSize={TAG_FONT}
-          color="#1b1412"
+          letterSpacing={0.02}
+          color={TAG_INK}
           anchorX="center"
           anchorY="middle"
           raycast={NO_RAYCAST}
         >
-          {entry.project.label}
+          {taken ? "taken" : entry.label}
         </Text>
       </group>
     </>
   );
 }
 
-const NO_RAYCAST = () => null;
+/** Stock behind the stock. No tag, no click — see data/stash. */
+function Dressing({ item }) {
+  const prop = useProp(item.model, item.tint);
+  return (
+    <group
+      position={worldAt(item.at)}
+      rotation={[0, item.turn, 0]}
+      raycast={NO_RAYCAST}
+    >
+      <primitive object={prop.object} />
+    </group>
+  );
+}
+
+/**
+ * @param open     the door is open, so the shelves are reachable
+ * @param stocked  what has already been taken
+ * @param onStock  (kind) => void
+ */
+export default function StashShelf({ open = false, stocked = [], onStock }) {
+  const reveal = useRef(0);
+  useFrame((_state, delta) => {
+    // tags fade with the door rather than popping with the click
+    reveal.current +=
+      ((open ? 1 : 0) - reveal.current) * Math.min(1, delta * 6);
+  });
+
+  return (
+    <group>
+      {GROCERIES.map((entry) => (
+        <Grocery
+          key={entry.node}
+          entry={entry}
+          open={open}
+          taken={stocked.includes(entry.stocks)}
+          reveal={reveal}
+          onStock={onStock}
+        />
+      ))}
+      {FRIDGE_DRESSING.map((item, i) => (
+        <Dressing key={i} item={item} />
+      ))}
+    </group>
+  );
+}
 
 useGLTF.preload(MODEL);

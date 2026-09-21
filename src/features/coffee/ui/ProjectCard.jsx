@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { uiId } from "@/features/coffee/ids";
 
 // The payoff for opening the fridge: a grocery turns out to be a project.
 //
@@ -25,6 +26,7 @@ export default function ProjectCard({ stash, onClose }) {
 
   return (
     <div
+      {...uiId("project-card")}
       style={{
         position: "absolute",
         left: 24,
@@ -60,7 +62,7 @@ export default function ProjectCard({ stash, onClose }) {
             textTransform: "uppercase",
           }}
         >
-          from the fridge · {label}
+          {stash.from ?? "from the fridge"} · {label}
         </span>
         <button
           type="button"

@@ -116,6 +116,65 @@ export function roastCss(t) {
   return `rgb(${a.map((v, i) => Math.round(v + (b[i] - v) * mix)).join(",")})`;
 }
 
+// HOW DARK THE SHOT IS, and it is the same shot everywhere it appears.
+//
+// There were three espressos in the room: #3a1f12 in the machine's cup,
+// #5a3018 for the stream falling into it, and POUR_COLOUR.espresso #24120b
+// for the band once it reached the bar. The first and the last are the same
+// liquid in the same ceramic demitasse, two metres apart, and they did not
+// match — carry a shot to the serve station and it changed colour on the way.
+//
+// The dark one was not a mistake, it was a COMPENSATION: the band is seen
+// through a tinted glass wall that lifts and neutralises whatever is behind
+// it, so it is mixed darker to come out right. That is correct for the band
+// and wrong for anything not behind glass, which is how it ended up on the
+// shot cup — a compensation applied where there was nothing to compensate
+// for. So there are two functions here and the pairing is the point:
+// `espressoCss` is the liquid, `espressoBandCss` is that liquid seen through
+// the serving glass.
+//
+// AND IT MOVES WITH THE BREW, which it never did before: the same flat brown
+// came out of a green bean and a burnt one. Roast is the main axis, because
+// that is what actually darkens coffee — a dark roast is a dark cup. Shot
+// LENGTH is the second and it runs the other way: a ristretto is the same
+// coffee with less water pushed through it, so it is denser and darker,
+// while a lungo is diluted and visibly paler. Pull long and the cup says so.
+const SHOT_INK = [
+  [0.0, "#6b4126"],
+  [0.35, "#3a1f12"], // the value the machine always used — medium, unchanged
+  [0.7, "#2a1209"],
+  [1.0, "#190a04"],
+];
+// how much the glass takes out. Measured, not chosen: #3a1f12 rendered as a
+// neutral grey through the glass wall, and #24120b is what was mixed to fix
+// it -- 0.6 of the original, channel for channel.
+const GLASS_K = 0.6;
+
+const bytes = (hex) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+const css = (c) =>
+  `rgb(${c.map((v) => Math.round(Math.min(255, Math.max(0, v)))).join(",")})`;
+
+/** The espresso itself, as it looks in an opaque cup. */
+export function espressoCss(roast = 0, shot = 0.5) {
+  const t = Math.min(1, Math.max(0, roast));
+  let i = 0;
+  while (i < SHOT_INK.length - 2 && t > SHOT_INK[i + 1][0]) i += 1;
+  const [t0, c0] = SHOT_INK[i];
+  const [t1, c1] = SHOT_INK[i + 1];
+  const k = t1 === t0 ? 0 : (t - t0) / (t1 - t0);
+  const a = bytes(c0);
+  const b = bytes(c1);
+  // CONCENTRATION, not brightness: 0.9 at a ristretto, 1.18 at a full lungo.
+  const dilute = 0.9 + 0.28 * Math.min(1, Math.max(0, (shot - 0.15) / 0.85));
+  return css(a.map((v, n) => (v + (b[n] - v) * k) * dilute));
+}
+
+/** The same shot, seen through the serving glass — see GLASS_K. */
+export function espressoBandCss(roast = 0, shot = 0.5) {
+  const m = espressoCss(roast, shot).match(/\d+/g).map(Number);
+  return css(m.map((v) => v * GLASS_K));
+}
+
 // Grind fineness ladder — the same idea as ROASTS one step later in the loop.
 // Grinding currently only gates on "finished", but the ladder is what the HUD
 // names, and it is the hook for "espresso needs a fine grind" when that lands.

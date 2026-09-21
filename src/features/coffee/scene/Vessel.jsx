@@ -1,4 +1,5 @@
-import { useMemo } from "react";
+import { memo, useMemo, useRef } from "react";
+import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { CUP, useArtTexture, useIceMaterial } from "@/features/coffee/cup";
 import { stackOf } from "@/features/coffee/data/drinks";
@@ -23,21 +24,278 @@ import { stackOf } from "@/features/coffee/data/drinks";
 // same drink: the cup (MUG) for anything hot, the tall glass (SERVE) for
 // anything over ice. Everything below is written against the shape record.
 
-// Cube placements, as fractions of the bore and of the ice column. Fixed
-// rather than random so the ice does not reshuffle itself every frame the
-// component re-renders — which, during a pour, is every frame. Eight of them,
-// stacked the whole way up: a cafe glass is ice with coffee poured through it,
-// not a drink with a few cubes floating on top.
-const CUBES = [
-  [0.72, 0.02, -0.46, 0.7],
-  [-0.68, 0.15, 0.4, 0.5],
-  [0.08, 0.28, 0.8, 1.1],
-  [0.76, 0.4, 0.26, 1.9],
-  [-0.48, 0.52, -0.6, 0.3],
-  [0.2, 0.64, -0.28, 0.9],
-  [-0.8, 0.77, 0.1, 2.3],
-  [0.12, 0.9, 0.48, 1.4],
-];
+// ICE IS THE ONE THING IN THE GLASS THAT IS NOT A LIQUID, and it used to be
+// animated as though it were: eight cubes at fixed fractions of the bore,
+// switched on one at a time as the pour ran. They appeared at the height they
+// would end up at, with air under them, while a SECOND set of three cubes —
+// owned by the serve station — fell from the scoop and vanished on arrival.
+// Nothing that left the scoop was anything that landed in the glass.
+//
+// One system now, and it is the cubes themselves: a cube leaves the scoop,
+// falls under gravity, bounces once or twice, and settles into the pile. The
+// pile floats a little as the drink comes up around it, and swirls when the
+// drink is stirred.
+//
+// WHY A PILE OF THREES. Ice is stacked in rings of three because three is
+// what fits a cafe glass's bore without interpenetrating: at ring radius
+// 0.8 x cube the neighbours sit 1.39 cube-widths apart, and the corners of
+// a cube turned any which way still clear the wall.
+//
+// HOW MANY RINGS IS DERIVED, and the number it is derived from is the one
+// the old lattice was reaching for by force: a glass is filled with ice to
+// about two thirds and the drink is poured THROUGH it. Cubes that stop where
+// the coffee stops look like sediment. So the pile is as many rings of three
+// as SETTLE to that line — six for the tall glass, four for the cup — rather
+// than eight cubes hung at fractions of it.
+const RING = (Math.PI * 2) / 3;
+const NO_RAYCAST = () => null;
+const G = 7.5; // m/s^2, eased off 9.81: real ice falls faster than it reads
+const BOUNCE = 0.28;
+const REST_V = 0.11; // below this, it has landed rather than bounced
+
+/** Deterministic -1..1 from an integer, so the ice never reshuffles. */
+const jitter = (i) => {
+  const v = Math.sin(i * 12.9898) * 43758.5453;
+  return (v - Math.floor(v)) * 2 - 1;
+};
+
+/** Where every cube ends up, and how tall the heap is once it is all there. */
+function packing(shape) {
+  const cube = shape.cube;
+  const step = cube * 0.85; // rings interlock rather than stack square
+  const r = Math.min(shape.rInner - cube * 0.78, cube * 0.8);
+  const base = shape.floor + cube * 0.55;
+  const want = shape.floor + shape.fill * 0.66; // the ice line, see above
+  const rings = Math.max(2, Math.round((want - base - cube * 0.5) / step) + 1);
+  const slots = [];
+  for (let i = 0; i < rings * 3; i++) {
+    const ring = Math.floor(i / 3);
+    slots.push({
+      r,
+      // each ring turned off the one below it, so the cubes above drop into
+      // the gaps instead of sitting on each other's shoulders
+      a: ring * 0.7 + (i % 3) * RING,
+      y: base + ring * step,
+      ring,
+      // this cube's share of the heap's stretch when it floats — see the
+      // buoyancy note in <Ice>
+      rise: rings > 1 ? ring / (rings - 1) : 1,
+    });
+  }
+  return { slots, top: base + (rings - 1) * step + cube * 0.5 };
+}
+
+/**
+ * The ice, simulated rather than placed.
+ *
+ * MEMOISED, and everything below the first render is done through refs, for
+ * the reason the old lattice comment gave: Contents re-renders every frame a
+ * pour is running. A cube's position cannot be a prop or it restarts each
+ * frame, and the mesh list cannot be sliced to the live count or the meshes
+ * remount each frame. Fixed meshes, state in a ref, visibility in the loop.
+ *
+ * @param poured  how far through the ice pour, 0..1 -- how many cubes have
+ *                left the scoop is this times the heap
+ * @param surface the drink's surface, cup-local metres
+ * @param drop    ref to where the scoop's mouth is, cup-local; cubes are born
+ *                there, which is the whole point — see the note at the top
+ * @param mixed   how far through a stir, 0..1; its RATE is what swirls them
+ */
+const Ice = memo(function Ice({
+  shape,
+  poured,
+  surface,
+  drop,
+  mixed,
+  material,
+}) {
+  const { slots, top } = useMemo(() => packing(shape), [shape]);
+  const cube = shape.cube;
+  const geom = useMemo(() => new THREE.BoxGeometry(cube, cube, cube), [cube]);
+  // AIRBORNE ICE IS DEPTH-TESTED, ice in the drink is not. The material in
+  // the glass has to draw through the opaque bands or it is not in the drink
+  // at all; a cube still in the air over the bar, drawn through everything,
+  // is just a sticker.
+  const air = useMemo(() => {
+    const m = material.clone();
+    m.depthTest = true;
+    m.opacity = 0.8;
+    return m;
+  }, [material]);
+
+  const meshes = useRef([]);
+  const cubes = useRef([]);
+  const swirl = useRef(0);
+  const spin = useRef(0);
+  const lift = useRef(0);
+  const wasMixed = useRef(0);
+  const out = useRef(0); // cubes released so far, which trails `want`
+  const since = useRef(0);
+  // props the loop reads, mirrored so it always has this frame's value
+  const now = useRef({ poured, surface, mixed });
+  now.current = { poured, surface, mixed };
+
+  useFrame((state, delta) => {
+    // CAPPED, NOT CLAMPED. A cap of 1/30 sounds prudent and is not: on a
+    // machine drawing 10fps every frame is over it, so gravity runs at a
+    // third speed and the ice drifts down like snow. The step is capped at
+    // 100ms against a tab coming back from the background, and anything
+    // under that is spent in full — in slices, so the integration stays
+    // stable when a frame is long.
+    const dt = Math.min(delta, 0.1);
+    const t = state.clock.elapsedTime;
+    const { poured: done, surface: fluid, mixed: mix } = now.current;
+    const want = Math.round(slots.length * THREE.MathUtils.clamp(done, 0, 1));
+
+    // RELEASED ON A CLOCK, not on the pour's progress directly. `poured` is
+    // read at React's cadence, and when that stutters the heap arrives in one
+    // lump: measured at 10fps it went from nothing to thirteen cubes between
+    // two frames. The pour decides how many are due, this decides when they
+    // leave, so the cascade looks the same however the app is running.
+    since.current += dt;
+    if (out.current > want) out.current = want; // a new drink; start over
+    // as many as are DUE, not one per frame: at 3fps one-per-frame stretched
+    // an 18-cube pour over seven seconds and the drink was finished before
+    // the ice arrived
+    while (out.current < want && since.current >= 0.03) {
+      since.current -= 0.03;
+      out.current += 1;
+    }
+    if (out.current >= want) since.current = 0;
+
+    // A STIR SWIRLS THE ICE, and what says a stir is running is the stir
+    // MOVING: `mixed` sits at 1 afterwards, so its value cannot tell a drink
+    // being stirred from one that has been.
+    const stirring = mix > wasMixed.current + 1e-4;
+    wasMixed.current = mix;
+    spin.current = THREE.MathUtils.damp(
+      spin.current,
+      stirring ? 5.5 : 0,
+      stirring ? 7 : 1.4,
+      dt
+    );
+    swirl.current += spin.current * dt;
+
+    // BUOYANCY, AND THE HEAP STRETCHES RATHER THAN RISING.
+    //
+    // Both of the obvious readings are wrong. Leave the heap where it settled
+    // and a full glass is ice sitting on the bottom with clear milk over it,
+    // which is not ice, it is gravel. Float the heap as one rigid body and it
+    // rides up to the surface and leaves a band of clear drink UNDERNEATH,
+    // which is just as wrong the other way up.
+    //
+    // A loose pile of floating ice does neither: it comes apart. The top of
+    // it reaches the surface, the bottom stays on the floor of the glass, and
+    // the rings in between space out — so the drink is poured through the ice
+    // rather than around it, which is the reading the old fixed lattice was
+    // reaching for by placing cubes at fractions of the level.
+    lift.current = THREE.MathUtils.damp(
+      lift.current,
+      Math.max(0, fluid - top),
+      3,
+      dt
+    );
+
+    for (let i = 0; i < slots.length; i++) {
+      const mesh = meshes.current[i];
+      if (!mesh) continue;
+      const c = (cubes.current[i] ??= { live: false });
+      if (i >= out.current) {
+        // the drink was cleared: forget everything, so the next glass does
+        // not open with the last one's ice already floating in it
+        c.live = false;
+        mesh.visible = false;
+        continue;
+      }
+      if (!c.live) {
+        const from = drop?.current;
+        c.live = true;
+        c.falling = true;
+        c.x = (from?.x ?? 0) + jitter(i) * 0.004;
+        c.z = (from?.z ?? 0) + jitter(i + 31) * 0.004;
+        c.y = from?.y ?? shape.top + 0.06;
+        c.vy = -0.05 - Math.abs(jitter(i + 7)) * 0.06;
+        c.rx = jitter(i) * 3;
+        c.ry = jitter(i + 11) * 3;
+        c.rz = jitter(i + 17) * 3;
+        c.wx = jitter(i + 3) * 7;
+        c.wy = jitter(i + 13) * 7;
+        c.wz = jitter(i + 23) * 7;
+      }
+
+      const slot = slots[i];
+      // the whole heap turns as one, the top rings a touch faster — a stir
+      // drags the surface round harder than it does the bottom
+      const a = slot.a + swirl.current * (0.6 + slot.ring * 0.1);
+      const sx = Math.cos(a) * slot.r;
+      const sz = Math.sin(a) * slot.r;
+      // the stretch, shared out by ring: none at the bottom, all of it at
+      // the top. `slot.rise` is 0..1 up the heap.
+      const rest = slot.y + lift.current * slot.rise;
+
+      if (c.falling) {
+        // SLICED. A 100ms frame integrated in one go steps a cube 130mm --
+        // most of the glass -- and it lands through the bottom of the heap
+        // rather than on it. Twenty-millisecond slices keep the arc and the
+        // bounce honest whatever the frame rate.
+        let rem = dt;
+        while (rem > 1e-5 && c.falling) {
+          const h = Math.min(rem, 0.02);
+          rem -= h;
+          c.vy -= G * h;
+          c.y += c.vy * h;
+          if (c.y <= rest) {
+            c.y = rest;
+            c.vy = -c.vy * BOUNCE;
+            if (c.vy < REST_V) {
+              c.vy = 0;
+              c.falling = false;
+            }
+          }
+        }
+        c.x = THREE.MathUtils.damp(c.x, sx, 7, dt);
+        c.z = THREE.MathUtils.damp(c.z, sz, 7, dt);
+      } else {
+        // landed: it follows its slot rather than integrating, so a heap
+        // riding a rising drink stays a heap
+        c.y = THREE.MathUtils.damp(c.y, rest, 6, dt);
+        c.x = THREE.MathUtils.damp(c.x, sx, 8, dt);
+        c.z = THREE.MathUtils.damp(c.z, sz, 8, dt);
+        const k = Math.exp(-dt * 4);
+        c.wx *= k;
+        c.wy = c.wy * k + spin.current * 0.8 * dt;
+        c.wz *= k;
+      }
+      c.rx += c.wx * dt;
+      c.ry += c.wy * dt;
+      c.rz += c.wz * dt;
+
+      const wet = fluid > c.y;
+      mesh.position.set(
+        c.x,
+        c.y + (wet && !c.falling ? Math.sin(t * 2.3 + i) * cube * 0.035 : 0),
+        c.z
+      );
+      mesh.rotation.set(c.rx, c.ry, c.rz);
+      mesh.material = c.falling ? air : material;
+      mesh.visible = true;
+    }
+  });
+
+  return slots.map((_, i) => (
+    <mesh
+      key={i}
+      ref={(m) => {
+        meshes.current[i] = m;
+      }}
+      geometry={geom}
+      material={material}
+      renderOrder={3}
+      visible={false}
+      raycast={NO_RAYCAST}
+    />
+  ));
+});
 
 // Slices across each seam. Eight is enough to read as a gradient at this
 // size and cheap enough to recolour every frame while a stir is running.
@@ -97,6 +355,11 @@ export function Contents({
   pouring = null,
   mixed = 0,
   shape = CUP,
+  drop = null,
+  // PER-KIND COLOUR OVERRIDES. Every pour but one is a fixed colour; the
+  // espresso is the colour of the bean that was roasted, so the station
+  // that knows the roast hands it in rather than this file guessing.
+  inks = null,
 }) {
   const art = useArtTexture();
   // Cubes sit INSIDE opaque bands, so they have to be drawn THROUGH them:
@@ -115,7 +378,12 @@ export function Contents({
     () => (pouring && !pours.includes(pouring) ? [...pours, pouring] : pours),
     [pours, pouring]
   );
-  const bands = useMemo(() => stackOf(list), [list]);
+  const bands = useMemo(() => {
+    const out = stackOf(list);
+    return inks
+      ? out.map((b) => (inks[b.kind] ? { ...b, colour: inks[b.kind] } : b))
+      : out;
+  }, [list, inks]);
 
   const grow = THREE.MathUtils.clamp(rising, 0, 1);
   const mix = THREE.MathUtils.clamp(mixed, 0, 1);
@@ -174,14 +442,10 @@ export function Contents({
     });
   }
 
-  // Ice fills the glass and the drink is poured THROUGH it — so the column is
-  // the taller of the drink and two thirds of the glass, not half the drink.
-  // Cubes that stop where the coffee stops look like sediment.
+  // The ice is its own thing entirely — see <Ice>. All this end has to say
+  // is whether there is any and how much of it has come out of the scoop.
   const iced = list.includes("ice");
   const iceGrow = pouring === "ice" ? grow : 1;
-  const iceTop = Math.max(surface, shape.floor + shape.fill * 0.66);
-  const cubes = iced ? Math.round(CUBES.length * iceGrow) : 0;
-  const cube = shape.cube;
 
   // Textured milk poured LAST. Fades in over the end of that pour, so the
   // pattern arrives as the surface settles rather than snapping on — and a
@@ -245,21 +509,16 @@ export function Contents({
         ))
       )}
 
-      {CUBES.slice(0, cubes).map(([ux, uy, uz, spin], i) => (
-        <mesh
-          key={`ice${i}`}
+      {iced && (
+        <Ice
+          shape={shape}
+          poured={iceGrow}
+          surface={surface}
+          drop={drop}
+          mixed={mix}
           material={iceMat}
-          renderOrder={3}
-          position={[
-            ux * (shape.rInner - cube * 0.62),
-            shape.floor + cube * 0.6 + uy * 0.9 * (iceTop - shape.floor),
-            uz * (shape.rInner - cube * 0.62),
-          ]}
-          rotation={[spin, spin * 1.7, spin * 0.6]}
-        >
-          <boxGeometry args={[cube, cube, cube]} />
-        </mesh>
-      ))}
+        />
+      )}
 
       {artScale > 0.01 && (
         <mesh

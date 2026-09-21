@@ -4,6 +4,11 @@ import { useGLTF, useCursor, Text } from "@react-three/drei";
 import { Select } from "@react-three/postprocessing";
 import Steam from "@/features/coffee/scene/Steam";
 import * as THREE from "three";
+import { espressoCss } from "@/features/coffee/data/beans";
+
+// Everything painted on a thing in this room is LETTERED in the same hand;
+// see scene/WallSign. A mix of faces reads as accidental.
+const FONT = `${import.meta.env.BASE_URL}fonts/Tealand.ttf`;
 
 // Espresso machine — the coffee corner's brewing station, replacing the cauldron
 // as the thing the pour/stir loop happens at.
@@ -65,6 +70,7 @@ export default function EspressoMachine({
   pourable = false, // locked and ready — the knobs become a control
   lockable = false, // portafilter is out and waiting to go in
   shot = 0, // 0..1, how much is in the cup
+  roast = 0, // 0..1 — how dark the bean was, which is how dark the shot is
   cup = false, // a cup is under the group head at all
   portafilterOut = false,
   label = "", // wordmark on the front, e.g. the ref's "ascaso"
@@ -91,13 +97,23 @@ export default function EspressoMachine({
   // cloned so tinting the crema never reaches another instance through drei's
   // shared material cache — the hazard BeanBag hit with its label
   const brewMat = useMemo(
-    () =>
-      new THREE.MeshStandardMaterial({
-        color: "#3a1f12",
-        roughness: 0.35,
-      }),
+    () => new THREE.MeshStandardMaterial({ roughness: 0.35 }),
     []
   );
+  // THE SHOT IS THE COLOUR OF THE BEAN YOU ROASTED. It was a constant, so a
+  // green bean and a burnt one poured the same brown -- and the same
+  // constant disagreed with the one the serve station used for the very
+  // same cup. One function owns it now; see espressoCss in data/beans.
+  // KEYED ON THE NUMBERS, not on the string espressoCss returns: `shot`
+  // moves every frame of a pull, so a memo keyed on the colour string would
+  // rebuild a THREE.Color per frame in the render path.
+  const { ink, streamInk } = useMemo(() => {
+    const css = espressoCss(roast, shot);
+    const c = new THREE.Color(css);
+    c.offsetHSL(0, 0, 0.07);
+    return { ink: css, streamInk: c };
+  }, [roast, shot]);
+  brewMat.color.set(ink);
   const cremaMat = useMemo(
     () => new THREE.MeshStandardMaterial({ color: "#c98d4d", roughness: 0.6 }),
     []
@@ -334,8 +350,11 @@ export default function EspressoMachine({
       {/* the pour itself — a thin column, resized each frame in useFrame */}
       <mesh ref={stream} position={[0, 0, CUP.z]} visible={false}>
         <cylinderGeometry args={[0.0045, 0.0045, 1, 8]} />
+        {/* the falling stream reads lighter than the pool it lands in --
+            it is thin and lit from all sides -- but it is the same coffee,
+            so it is the same ink brightened rather than its own colour */}
         <meshStandardMaterial
-          color="#5a3018"
+          color={streamInk}
           roughness={0.3}
           transparent
           opacity={0.92}
@@ -481,7 +500,8 @@ export default function EspressoMachine({
     >
       {/* <Select> wraps ONLY geometry. The Outline pass overrides materials to
           build its mask, which discards troika's alpha cutout — a selected
-          <Text> would outline as its full bounding QUAD, a rectangle hanging
+          <Text
+        font={FONT}> would outline as its full bounding QUAD, a rectangle hanging
           in mid-air. Same fix as BeanBag. */}
       {highlight ? <Select enabled={hovered}>{meshes}</Select> : meshes}
 
@@ -489,6 +509,7 @@ export default function EspressoMachine({
           POSITION+NORMAL only; a decal would need unwrapping in Blender. */}
       {label ? (
         <Text
+          font={FONT}
           position={[0, 0.3, -0.283]}
           fontSize={0.038}
           letterSpacing={0.04}

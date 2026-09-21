@@ -1,3 +1,15 @@
+/* THE ROOM'S OWN FACE.
+   The path carries vite's `base` explicitly. Files in public/ are copied
+   verbatim and never processed, so a bare /fonts/... would 404 on the
+   deployed /My-Brew/ site. Change both together. */
+@font-face {
+  font-family: "Tealand";
+  src:
+    url("/My-Brew/fonts/Tealand.otf") format("opentype"),
+    url("/My-Brew/fonts/Tealand.ttf") format("truetype");
+  font-display: swap;
+}
+
 /* The whole stylesheet. The room is a canvas and every overlay styles itself
    inline, so all that is left is the reset Tailwind's preflight used to do
    before the witch app (and Tailwind with it) was removed.

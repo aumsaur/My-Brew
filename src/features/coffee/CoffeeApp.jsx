@@ -15,7 +15,10 @@ import StationPanel from "@/features/coffee/ui/StationPanel";
 import DrinkCard from "@/features/coffee/ui/DrinkCard";
 import ProjectCard from "@/features/coffee/ui/ProjectCard";
 import StationControls from "@/features/coffee/ui/StationControls";
-import { STASH_BY_NODE } from "@/features/coffee/data/stash";
+import { CAKE_BY_NODE } from "@/features/coffee/data/stash";
+import SceneIds from "@/features/coffee/scene/SceneIds";
+import IdOverlay from "@/features/coffee/ui/IdOverlay";
+import { uiId } from "@/features/coffee/ids";
 import { OVERVIEW, useRouteBlend } from "@/features/coffee/cameraRoutes";
 import { useCameraNudge } from "@/features/coffee/cameraOrbit";
 import { clicksSwallowed, swallowClicks } from "@/features/coffee/clickGate";
@@ -124,9 +127,31 @@ export default function CoffeeApp() {
   const [flow, setFlow] = useState(null);
   const [using, setUsing] = useState(null);
   const [picked, setPicked] = useState(false); // the grinder is in hand
-  const [stash, setStash] = useState(null); // fridge item node name
+  const [stash, setStash] = useState(null); // cake whose card is open
   const [heldDist, setHeldDist] = useState(0.4); // plane the held thing sits on
+  // F2 paints an id on every addressable thing so a change can be asked for
+  // by name instead of described. See features/coffee/ids.js and
+  // .claude/CONTROL.md.
+  // WHICH HOTBAR SLOT IS CHOSEN. Selecting a bean highlights its slot, and
+  // at a station a slot is a control rather than a readout -- the explicit
+  // half of "what am I using", next to the room's own click-the-thing.
+  const [slot, setSlot] = useState(null);
+  const [showIds, setShowIds] = useState(false);
+  const [scenePos, setScenePos] = useState([]);
   const handleUsing = setUsing;
+
+  useEffect(() => {
+    // on WINDOW, not the canvas: the canvas only has focus once it has been
+    // clicked, and the overlay is most wanted before you have touched
+    // anything. preventDefault stops the browser's own F2.
+    const onKey = (e) => {
+      if (e.key !== "F2") return;
+      e.preventDefault();
+      setShowIds((v) => !v);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   // Walking away from the fridge closes the door, so the card it opened goes
   // with it. Anything else would leave a project pinned to the screen while
@@ -224,6 +249,7 @@ export default function CoffeeApp() {
             before anything reads it. Mount this after and the grinder lags a
             frame behind the view and jitters. */}
         <Rig focused={focused} using={using} handheld={picked} />
+        <SceneIds enabled={showIds} onPositions={setScenePos} />
 
         <Selection>
           <EffectComposer multisampling={0} autoClear={false}>
@@ -245,9 +271,8 @@ export default function CoffeeApp() {
               picked={picked}
               onPicked={setPicked}
               onHoldEnd={swallowClicks}
-              stashItem={stash}
               onStashItem={setStash}
-              onStashDistance={setHeldDist}
+              onHeldDistance={setHeldDist}
             />
           </Suspense>
         </Selection>
@@ -259,7 +284,33 @@ export default function CoffeeApp() {
           roast={flow?.roast ?? 0}
           ground={flow?.ground ?? 0}
           shot={flow?.shot ?? 0}
-          onClear={flow?.reset}
+          stocked={flow?.stocked ?? []}
+          // WHAT THIS SLOT CAN DO WHERE YOU ARE STANDING. At the bar that is
+          // the pours; at the roaster it is the one act the drum wants,
+          // which is the bag going in. Anywhere else a slot is just state.
+          usable={
+            focused === "serve"
+              ? flow?.pourable
+              : focused === "roaster"
+                ? { bean: flow?.canLoadRoaster }
+                : focused === "grinder"
+                  ? { bean: flow?.canLoadGrinder }
+                  : null
+          }
+          selected={slot}
+          onSelect={setSlot}
+          // the bean goes into whichever machine you are standing at
+          onUse={(k) =>
+            k !== "bean"
+              ? flow?.pour?.(k)
+              : focused === "grinder"
+                ? flow?.loadGrinder?.()
+                : flow?.loadRoaster?.()
+          }
+          onDiscard={(k) => flow?.unstock?.(k)}
+          // the bin puts the BAG back, not the drink: binning the bean used
+          // to reset the whole loop, glass and all
+          onClear={flow?.clearBean}
         />
       )}
 
@@ -280,9 +331,11 @@ export default function CoffeeApp() {
       )}
 
       <ProjectCard
-        stash={stash ? STASH_BY_NODE[stash] : null}
+        stash={stash ? CAKE_BY_NODE[stash] : null}
         onClose={() => setStash(null)}
       />
+
+      <IdOverlay enabled={showIds} scenePos={scenePos} />
 
       {/* The station's own controls are the props themselves; these are the
           floor under them — see ui/StationControls. */}
@@ -296,17 +349,26 @@ export default function CoffeeApp() {
       )}
 
       <div
+        {...uiId("hint")}
         style={{
-          // Top, and inboard of the signpost. Bottom-left is not available
-          // — that band belongs to the exit button and the station panel —
-          // and left:16 is not available either: the signpost hangs there.
-          // It is pointerEvents:none either way, so the worst an overlap
-          // can do is look untidy; it can never eat a click meant for a
-          // sign.
+          // TOP LEFT. It used to be shoved out to left:420 to clear the
+          // hanging sign; the sign has moved inboard with the counter group
+          // it hangs over, so the corner is free and the standing
+          // instructions read as standing instructions rather than floating
+          // in the middle of the wall.
+          //
+          // 230 is measured, not chosen: the sign's boards start at x=262
+          // in a 1280 frame, and this card's background has to stop short of
+          // them. The copy was shortened to suit rather than left to wrap
+          // into a column -- and it had to change anyway, because it still
+          // said the station text was at the BOTTOM of the screen.
+          //
+          // pointerEvents:none regardless, so an overlap can look untidy but
+          // can never eat a click meant for a sign.
           position: "absolute",
-          left: 420,
+          left: 16,
           top: 16,
-          maxWidth: 380,
+          maxWidth: 230,
           font: "12px ui-monospace, monospace",
           color: "#d9cfc2",
           background: "#00000066",
@@ -318,7 +380,7 @@ export default function CoffeeApp() {
       >
         <div>
           <b>click</b> a station — or its <b>sign</b> — to fly to it. What it
-          does once you are there is written at the bottom of the screen.
+          does is written at the top.
         </div>
         <div>
           <b>drag</b> to lean · <b>scroll</b> to ease in · <b>esc</b> to back

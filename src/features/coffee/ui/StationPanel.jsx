@@ -1,3 +1,4 @@
+import { uiId } from "@/features/coffee/ids";
 import {
   ROAST_ORDER,
   GRIND_ORDER,
@@ -61,7 +62,10 @@ function Meter({
   const idx = Math.min(ladder.length - 1, Math.floor(value * ladder.length));
 
   return (
-    <div style={{ opacity: active ? 1 : 0.42, transition: "opacity .25s" }}>
+    <div
+      {...uiId("station-panel.meter")}
+      style={{ opacity: active ? 1 : 0.42, transition: "opacity .25s" }}
+    >
       <div
         style={{
           display: "flex",
@@ -256,15 +260,40 @@ function describe(focused, flow, picked) {
         live: true,
       };
     case "roaster":
-      return {
-        title: "roaster",
-        press: "press and hold",
-        at: "anywhere on the roaster",
-        tail: "to roast",
-        meter: "roast",
-        live: !!f.canRoast,
-      };
+      // Two states, because there are now two acts: the bag goes in, THEN
+      // the drum turns. One line each, and the first one never says "press
+      // and hold" at a roaster that has nothing in it to roast.
+      return f.canLoadRoaster
+        ? {
+            title: "roaster",
+            press: "click",
+            at: "the drum",
+            tail: "to tip the beans in",
+            meter: "roast",
+            live: true,
+          }
+        : {
+            title: "roaster",
+            press: "press and hold",
+            at: "anywhere on the roaster",
+            tail: "to roast",
+            meter: "roast",
+            live: !!f.canRoast,
+          };
     case "grinder":
+      // the beans have to be IN it first, the same two beats the roaster
+      // has — and this line is what was missing when someone stood here
+      // with roasted beans and no way to find out what to do with them
+      if (f.canLoadGrinder) {
+        return {
+          title: picked ? "grinder — in hand" : "grinder",
+          press: "click",
+          at: "the bean in your hotbar",
+          tail: "to tip it in",
+          meter: "grind",
+          live: true,
+        };
+      }
       return picked
         ? {
             title: "grinder — in hand",
@@ -308,7 +337,7 @@ function describe(focused, flow, picked) {
         tail: "to take it out",
         live: true,
       };
-    case "milkbar":
+    case "serve":
       return {
         title: "the bar",
         press: "click",
@@ -328,10 +357,15 @@ export default function StationPanel({ flow, focused = null, picked = false }) {
 
   return (
     <div
+      {...uiId("station-panel")}
       style={{
+        // TOP CENTRE. It sat at the bottom, which put the one thing that
+        // changes while you work at the furthest point from where you are
+        // looking -- and directly over the props you were about to click.
+        // The hotbar owns the bottom now.
         position: "absolute",
         left: "50%",
-        bottom: 20,
+        top: 16,
         transform: "translateX(-50%)",
         width: 330,
         font: "12px ui-monospace, monospace",

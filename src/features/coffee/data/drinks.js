@@ -35,10 +35,19 @@ export const POURS = [
 // wall, which lifts and neutralises them. Measured, not guessed — espresso
 // at #3a1f12 came out of the render as (118,109,105), a neutral grey.
 export const POUR_COLOUR = {
+  // A FALLBACK, not the live value. The espresso band is the colour of the
+  // bean that was roasted and the length it was pulled, so the serve station
+  // hands Contents an override from espressoBandCss; this is what anything
+  // without a roast to consult gets. Changing it will not change the drink.
   espresso: "#24120b",
   milk: "#efe3cf",
   "milk-steamed": "#f6ede0",
-  water: "#c8b79b",
+  // NOT BEIGE. #c8b79b was picked so a water band would read inside a
+  // layered drink, and the cost was the carafe: a tan fill at 62% opacity in
+  // a glass jug on the back shelf is a jug of milk, which is exactly what it
+  // got mistaken for. Water is water; if an americano's dilution needs to
+  // read, that is the band's job, not the jug's.
+  water: "#dcecf1",
   orange: "#e08a24",
   chocolate: "#190c05",
   ice: "#dbeef6",
@@ -79,6 +88,84 @@ export function hasArt(pours = []) {
   return pours[pours.length - 1] === "milk-steamed";
 }
 
+/**
+ * What is in the glass when none of it is coffee.
+ *
+ * `coffee: false` travels with these so the receipt can drop the bean, the
+ * roast, the grind and the shot — four specs about a bean that never got
+ * near the glass. See ui/DrinkCard.
+ */
+function withoutCoffee({ has, milk, pours }) {
+  const rest = pours.filter((k) => k !== "ice");
+  const only = (k) => rest.length === 1 && has(k);
+  const n = (id, name, of) => ({ id, name, of, coffee: false });
+
+  if (!rest.length) {
+    return has("ice")
+      ? n(
+          "ice-only",
+          "Ice",
+          "a glass of ice. the well never runs out, so this is a choice you can keep making"
+        )
+      : n("empty", "Nothing", "an empty glass");
+  }
+  if (has("chocolate")) {
+    if (milk) {
+      return n(
+        "choc-milk",
+        "Chocolate Milk",
+        "the order you would have placed at nine, and it still works"
+      );
+    }
+    if (has("water")) {
+      return n(
+        "hot-choc",
+        "Hot Chocolate",
+        "syrup and hot water. technically correct, which is the worst kind of correct"
+      );
+    }
+    if (only("chocolate")) {
+      return n(
+        "syrup-neat",
+        "Chocolate Syrup",
+        "neat, in a glass. espresso but sweet, minus the espresso"
+      );
+    }
+  }
+  if (only("orange")) {
+    return n(
+      "juice",
+      "Orange Juice",
+      "straight from the jug, in a coffee bar. no notes"
+    );
+  }
+  if (only("water")) {
+    return n(
+      "water",
+      "Water",
+      "a glass of water. it was always free and it still is"
+    );
+  }
+  if (rest.length === 1 && milk) {
+    return has("milk-steamed")
+      ? n(
+          "babyccino",
+          "Babyccino",
+          "steamed milk and nothing else. that is the real name for it, which is the funniest part"
+        )
+      : n(
+          "milk",
+          "Milk",
+          "a glass of milk, poured at a bar with an espresso machine on it"
+        );
+  }
+  return n(
+    "mixture",
+    "Something",
+    `${rest.length} things in a glass, none of them coffee`
+  );
+}
+
 export function resolveDrink(pours = [], shot = 0) {
   const has = (k) => pours.includes(k);
   const at = (k) => pours.indexOf(k);
@@ -90,17 +177,14 @@ export function resolveDrink(pours = [], shot = 0) {
   const milkAt = has("milk-steamed") ? at("milk-steamed") : at("milk");
   const iced = has("ice");
 
-  if (!has("espresso")) {
-    return { id: "empty", name: "Nothing", of: "an empty glass" };
-  }
-
   // Ice is a modifier on whatever you made, not a drink of its own — except
-  // when it is the only thing with the shot, which is a real order.
+  // when it is the only thing in the glass, which is its own kind of answer.
   const chill = (d) =>
     iced ? { ...d, id: `iced-${d.id}`, name: `Iced ${d.name}` } : d;
 
   // Orange juice and milk is not a drink, it is an accident. Citric acid
-  // drops milk's casein out of suspension on contact.
+  // drops milk's casein out of suspension on contact — with or without a
+  // shot in there, which is why this is checked before the coffee is.
   if (has("orange") && milk) {
     return {
       id: "curdled",
@@ -108,6 +192,19 @@ export function resolveDrink(pours = [], shot = 0) {
       of: "orange juice and milk, which is a chemistry demonstration",
     };
   }
+
+  // NO COFFEE IS STILL AN ANSWER.
+  //
+  // Everything without a shot in it used to come back as "Nothing / an empty
+  // glass" — and the glass was not empty, you had just made something else.
+  // Free sequencing means a glass of chocolate milk is two clicks away, so
+  // the most reachable drinks in the room were the ones with no name.
+  //
+  // They are named now, and the naming is the reward: this is a room you
+  // learn by trying things, so every combination that resolves to a joke is
+  // one more thing to find. The register is the one Curdled set — deadpan,
+  // and right about the chemistry.
+  if (!has("espresso")) return chill(withoutCoffee({ has, milk, pours }));
 
   if (has("orange")) {
     return iced

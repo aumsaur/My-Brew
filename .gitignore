@@ -32,3 +32,13 @@ tmp-*
 *.njsproj
 *.sln
 *.sw?
+
+# Blender autosaves and hand-made backups — the .blend beside them is the source
+*.blend1
+.dev/blender/*.pre-*.blend
+
+# Machine-local tool config: absolute paths and a per-machine MCP port.
+# The port registry that governs it lives outside the repo, in
+# Documents/App/.claude/MCP-PORTS.md
+.mcp.json
+.claude/settings.local.json

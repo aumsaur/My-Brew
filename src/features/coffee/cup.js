@@ -5,7 +5,7 @@ import * as THREE from "three";
 //
 // Split out of Vessel.jsx so that file only exports components: mixing
 // constants and components in one module breaks fast refresh, and these are
-// imported by the milk bar, the machine and the vessel itself.
+// imported by the serve station, the machine and the vessel itself.
 
 /** Derive the three numbers every vessel is actually used through. */
 function shape(v) {

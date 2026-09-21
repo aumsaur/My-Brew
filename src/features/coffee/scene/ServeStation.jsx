@@ -1,11 +1,12 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useFrame } from "@react-three/fiber";
-import { Text, useCursor } from "@react-three/drei";
+import { Text, useCursor, useGLTF } from "@react-three/drei";
 import { Select } from "@react-three/postprocessing";
 import * as THREE from "three";
 import { PALETTE } from "@/features/coffee/palette";
 import { swallowClicks } from "@/features/coffee/clickGate";
 import { POUR_COLOUR, stackOf } from "@/features/coffee/data/drinks";
+import { espressoCss, espressoBandCss } from "@/features/coffee/data/beans";
 import {
   CUP,
   CUP_FLOOR,
@@ -19,6 +20,12 @@ import {
 } from "@/features/coffee/cup";
 import { Contents, CupBody } from "@/features/coffee/scene/Vessel";
 import Steam from "@/features/coffee/scene/Steam";
+import { IdTag } from "@/features/coffee/scene/SceneIds";
+import { useSceneId } from "@/features/coffee/ids";
+
+// Everything painted on a thing in this room is LETTERED in the same hand;
+// see scene/WallSign. A mix of faces reads as accidental.
+const FONT = `${import.meta.env.BASE_URL}fonts/Tealand.ttf`;
 
 // The finishing station: where a shot becomes a drink.
 //
@@ -34,7 +41,7 @@ import Steam from "@/features/coffee/scene/Steam";
 // that did not change, and the level jumped on the single frame the stream
 // switched off. Three clocks, none of them agreeing.
 //
-// NOTHING IS ON THE BAR THAT IS NOT IN PLAY. Milk, juice and ice come out of
+// NOTHING IS ON THE SERVE STATION THAT IS NOT IN PLAY. Milk, juice and ice come out of
 // the fridge and only appear once fetched; the shot cup arrives from the
 // machine. Six permanent objects wanted about half a metre of counter and
 // there is 0.38m, and no arrangement of x ever fixed that — so the fix is
@@ -55,9 +62,6 @@ const SYRUP = "#4a2c1b";
 const BRASS = "#c9974a";
 const JUICE = "#e08a24";
 const CARTON = "#f2efe6";
-// the label on the milk carton, matching the fridge's m_milk so the thing
-// you put on the bar is visibly the thing you took off the shelf
-const MILK_LABEL = "#5b86c4";
 
 // A RAISED BACK SHELF for the tall sources. Shuffling x only ever traded one
 // collision for another — the serving glass ended up in front of the carafe,
@@ -66,17 +70,22 @@ const MILK_LABEL = "#5b86c4";
 // A PREP BOARD, not a tray: 45mm thick, because the ice well is sunk into it
 // and you cannot sink anything into 16mm. Widened 0.38 -> 0.42 to buy the
 // well its corner — the station moved inboard at the same time, so there is
-// counter under all of it now (see layout.milkbar).
+// counter under all of it now (see layout.serve).
 const TRAY = { w: 0.42, d: 0.26, t: 0.045 };
 const SHELF = { z: -0.085, d: 0.09, h: 0.05 };
 const TOP = TRAY.t;
 const SHELF_TOP = TOP + SHELF.h;
 const FRONT_Z = 0.055;
 
-// TWO VESSELS, and the rack holds both: a stack of cups and a stack of tall
-// glasses. They are ONE control — you do not pick the glassware, the fridge
-// already did (see takeGlass) — so the rack is a single target and the stack
-// it comes off is whichever one the drink needs.
+// TWO VESSELS, and the rack holds both as SEPARATE targets: a stack of cups
+// and a stack of tall glasses, and you take the one you want. (This comment
+// used to claim the rack was a single control that chose for you. It never
+// was — onTakeGlass has always been handed the kind you clicked — and the
+// claim only looked true because the whole station was inert until the shot
+// was pulled, so nobody got to choose anything.)
+//
+// You cannot know which vessel you need before you know what you are making,
+// so the choice stays open: swap freely until the first pour lands.
 //
 // Front and back rather than side by side, because side by side does not fit.
 // Two stacks need 160mm of x; the board has 420mm and the well, the shot cup
@@ -93,7 +102,7 @@ const SHOT_X = 0.01;
 // the drink you were building. A cafe does not keep its clean glassware on
 // the prep surface either; it keeps it on a shelf above, out of the way and
 // in plain sight. The board is for the drink.
-// y measured against the station's own camera, not guessed: the milk bar's
+// y measured against the station's own camera, not guessed: the serve station's
 // focus view frames world 0.775..1.345, and at 0.32 (world 1.24) the glasses
 // standing on this shelf reached 1.39 and were cut off above the top of the
 // frame — invisible, and unclickable with them. 0.21 puts both inside it.
@@ -114,7 +123,29 @@ const SLOT = { mug: -0.075, tall: 0.072 }; // x along that shelf
 // stops at the riser's own height, so it adds nothing to the silhouette.
 // The width took the capacity back, and the 42mm it gave up in front is
 // clear board.
-const WELL = { x: 0.145, z: 0.024, w: 0.09, d: 0.056, deep: 0.032 };
+// GROWN ~20% (was 0.09 x 0.056). At the old size the well and its lid read
+// as a detail on the board rather than a fitting you use, and the lid -- the
+// bit that actually moves -- was the smallest moving thing in the room.
+//
+// The depth is still the lid's constraint, not the well's: LID_OPEN is
+// derived from where the open lid lands on the riser, so `d` growing moves
+// that landing rather than breaking it. Clearance re-checked: the well now
+// spans x 0.091..0.199 against a board half-width of 0.21, and the bell at
+// x 0.18 sits on the riser at z -0.085 while the well is at z -0.009..0.057,
+// so they miss each other in depth rather than by luck.
+// BIGGER AGAIN, and moved off the edge. 0.09 -> 0.108 was too timid to
+// read as a change at all; 0.13 is half as wide again as the original and
+// the lid, being WELL.w + 0.02, grows with it.
+//
+// x came in from 0.145 to 0.115 because the old right edge was 0.199
+// against a board edge of 0.21 — 11mm, which is what "on the edge" meant.
+// It now sits 0.05..0.18 with 30mm of board outside it, and still clears
+// the shot cup (0.032) by 18mm.
+//
+// The bell at x 0.18 overlaps in x and misses in DEPTH: the bell is on the
+// riser at z -0.085 and the well runs z -0.015..0.063, so the open lid --
+// which stops on the riser's front edge at -0.04 — never reaches it.
+const WELL = { x: 0.115, z: 0.024, w: 0.13, d: 0.078, deep: 0.032 };
 const WELL_CUBE = 0.0155; // ice in the well, sized to the well not the glass
 
 // A SCOOP IS A SHOVEL. This was a hemisphere on a stick, which is a ladle —
@@ -125,7 +156,26 @@ const WELL_CUBE = 0.0155; // ice in the well, sized to the well not the glass
 // running on past the sides as a lip. It is built along x with the mouth at
 // -x, because -x is where the glass is and the pour tips it that way.
 const SCOOP = { r: 0.0155, len: 0.04, h: 0.023, grip: 0.03 };
-const GRIP_A = 0.42; // how far the handle lifts off the bowl's axis
+// MODELLED IN BLENDER, unlike the rest of this bar. The primitive
+// version of the scoop was a half-cylinder, a disc, a box and a rod,
+// and it kept reading as a gutter with a stick in it: a real scoop's
+// mouth is RAKED, the floor reaching forward of the sides to get under
+// the ice, and that curve is free in a mesh and awkward in primitives.
+// Authored at the numbers above, in metres, so it needs no scale entry.
+const SCOOP_MODEL = `${import.meta.env.BASE_URL}models/ice-scoop.glb`;
+const CARAFE_MODEL = `${import.meta.env.BASE_URL}models/water-carafe.glb`;
+// ONE BOTTLE, MANY FLAVOURS. A pump bottle is a pump bottle whether it
+// holds vanilla or chocolate, so the model is shared and the FILL and
+// LABEL nodes carry the flavour. The old chocolate was a stubby capped
+// cylinder, which is a protein powder tub, not a syrup bottle -- the
+// pump is the entire silhouette.
+const SYRUP_MODEL = `${import.meta.env.BASE_URL}models/syrup-bottle.glb`;
+const JUICE_MODEL = `${import.meta.env.BASE_URL}models/juice-jug.glb`;
+// what each flavour paints on the shared bottle
+const SYRUPS = {
+  chocolate: { fill: "#1a0d05", label: "#5c3320" },
+  vanilla: { fill: "#c79a52", label: "#e8d3a8" },
+};
 // It rests NOSE DOWN in the ice and turned a few degrees off square,
 // because that is how a scoop that has been used is lying. Square to the
 // well and level, it reads as a part of the fitting rather than a tool
@@ -139,7 +189,7 @@ const SCOOP_SKEW = 0.22;
 // riser was built to avoid — you could not tell where the drink ended. The
 // jug is opaque steel and as wide as the glass, so it goes there instead and
 // the drink reads against it.
-const JUG = { x: -0.1, r: 0.034, rTop: 0.04, h: 0.098 };
+const JUG = { x: -0.093, r: 0.034, rTop: 0.04, h: 0.098 };
 // THE CARTON, and the reason it exists.
 //
 // The milk used to be one steel jug doing two jobs — cold milk and steamed
@@ -153,13 +203,63 @@ const JUG = { x: -0.1, r: 0.034, rTop: 0.04, h: 0.098 };
 // the one gap on the riser wide enough for it: the riser runs -0.21..0.21
 // and the jug's shoulder reaches -0.14, leaving 70mm for a 40mm box with
 // 18mm of daylight either side.
-const CTN = { x: -0.178, w: 0.04, h: 0.086 };
-const CAR = { x: -0.01, r: 0.028, rTop: 0.032, h: 0.104 };
-const SYR = { x: 0.055, r: 0.019, h: 0.064 };
-const OJ = { x: 0.115, w: 0.042, h: 0.09 };
+// THE SAME CARTON THE FRIDGE HOLDS, and that is the fix. It used to be a
+// 40x86mm box of primitives here while the fridge shelf held a 132x260mm
+// one, so the thing you carried out changed size as well as shape on the
+// way to the bar. One model, one set of numbers, both places.
+//
+// 62x139mm, and the width is not a taste decision: the riser's left slot
+// runs from its edge at -0.21 to the jug's shoulder at -0.14, so 70mm is all
+// there is. At 80mm the carton hung off the end of the board. x is pinned
+// the same way -- 4mm of daylight either side is the whole budget.
+//
+// The fridge's groceries are chunkier than the bar's props (its jar is
+// 129mm across), so one honest size cannot flatter both rooms. The bar wins
+// because that is where the carton is a tool rather than set dressing.
+const CTN = { x: -0.179, w: 0.062, h: 0.1395 };
+const CARTON_MODEL = `${import.meta.env.BASE_URL}models/milk-carton.glb`;
+// The modelled carafe is 86mm across the handle and spout, and the gap
+// between the jug's shoulder (-0.060) and the syrup (0.036) is 96mm — so x
+// is centred in it rather than left at -0.01, which put the handle 1mm into
+// the syrup. `r`/`h` stay: they are what the water level and the pour maths
+// read, not the vessel's own size.
+const CAR = { x: 0.005, r: 0.028, rTop: 0.032, h: 0.104 };
+// `h` is the POUR MOUTH height, not the model's -- the bottle stands 148mm
+// but it dispenses from the pump's spout at 134mm, and the pour maths aims
+// by the lip.
+const SYR = { x: 0.088, r: 0.0253, h: 0.134 };
+// A SMALL-GALLON JUICE JUG, 80 x 58 x 132. The squat rounded-square body a
+// supermarket half gallon comes in, sleeved with a label, a moulded loop
+// handle off one side and a short neck leaning the other way under a big
+// screw cap.
+//
+// It replaces a tall 2L bottle, and the shape carries the difference: a
+// bottle next to the water carafe and the syrup was a third tall cylinder
+// in a row of them. This is the only thing on the riser you could not
+// mistake for a bottle at a glance, which is the whole job of a prop that
+// has to be recognised in a 40-pixel silhouette.
+//
+// THE PROPORTIONS ARE THE REAL JUG'S, not eyeballed: the handle stands a
+// third of the body's width proud and the hole through it is about a fifth
+// of that width. Held to that it comes out 80mm across — NARROWER than the
+// bottle it replaces, and 24mm shorter, which the riser wanted both of.
+//
+// The origin is NOT its centre: the body is centred on x but the handle
+// reaches to +0.049, so the jug occupies -0.031..+0.049 around it. `h` is
+// the pour mouth — the cap, which is where the lip actually is.
+const OJ = { x: 0.158, w: 0.0798, h: 0.132 };
 // on the back shelf, out of the prep space. It is a bell, not an ingredient —
 // the front row is for things that go in the glass.
-const BELL = { x: 0.18, r: 0.022 };
+// THE BELL CAME OFF THE RISER. With a 2L jug in the row, six vessels came
+// to 405mm of a 420mm shelf -- 3mm gaps, which is touching. The bell is the
+// one thing up there that is not a pour source, and the back of a shelf was
+// always the wrong home for it: you ring a service bell at the counter
+// EDGE, where a customer can reach it, not behind the bottles.
+//
+// Front-right of the board, clear of the ice well (which ends at z 0.063).
+// The four vessels left on the riser get 14.8mm gaps: carton -0.179,
+// pitcher -0.093, carafe 0.005, syrup 0.088, jug 0.158.
+const BELL = { x: 0.185, z: 0.1, r: 0.022 };
 // The demitasse, at the SAME size the machine draws it: the machine builds it
 // in model units inside a group scaled 0.58, and drawing it at 0.8 here meant
 // the cup grew 38% on the flight over. It is also the wrong read — a 104mm
@@ -227,9 +327,14 @@ const WELL_ICE = [
 
 const MILK_LEVEL = 0.055;
 const WATER_LEVEL = 0.056;
-const SHOT_LEVEL = CUP_FILL * 0.32;
+// HOW MUCH ESPRESSO ARRIVED. This was a flat CUP_FILL * 0.32, so a
+// ristretto and a lungo both turned up as a third of a cup: the machine
+// fills its cup with `shot * CUP_FILL` and the bar redrew it at a constant.
+// The volume you pulled is the one thing the walk between the two stations
+// must not lose. Same formula as EspressoMachine now, so they agree by
+// construction rather than by two numbers being kept in step.
+const shotLevel = (shot) => CUP_FILL * Math.max(0.04, shot);
 const PUFFS = 6;
-const FALLING = 3; // ice cubes in the air at once
 
 // How high a vessel hangs while it pours, and where its lip must land.
 // Derived, not typed: the glass rim is at TOP + (baseH + h) * CUP_SCALE.
@@ -264,7 +369,7 @@ const _mouthH = {
   jug: JUG.h,
   carton: CTN.h,
   water: CAR.h,
-  chocolate: SYR.h + 0.024,
+  chocolate: SYR.h, // the pump's spout, already the mouth height
   orange: OJ.h,
   ice: SCOOP.h,
   espresso: (CUP.baseH + CUP.h) * CUP_SCALE,
@@ -324,7 +429,7 @@ function beats(t) {
   };
 }
 
-export default function MilkBar({
+export default function ServeStation({
   active = false,
   // THE CAMERA IS HERE, which is not the same as the station being in
   // service. `active` is gated on the loop having reached the finishing
@@ -333,6 +438,8 @@ export default function MilkBar({
   arrived = false,
   glass = false,
   stocked = [],
+  shot = 0, // how full the cup that arrived from the machine is
+  roast = 0, // and how dark it is -- the same bean, so the same colour
   steamed = false,
   stirred = false,
   pours = [],
@@ -371,7 +478,36 @@ export default function MilkBar({
   const bell = useRef();
   const spoon = useRef();
   const stream = useRef();
-  const drops = useRef();
+  // WHERE THE SCOOP'S MOUTH IS, in the serving glass's own space, written
+  // every frame of an ice pour and read by the ice in the glass. A plain
+  // object rather than a prop because the cubes are born at it inside a
+  // frame loop -- see <Ice> in scene/Vessel.
+  const iceDrop = useRef({ x: 0, y: 0, z: 0 });
+  // Scene ids for the F2 overlay. These props already own a ref that the
+  // frame loop drives, so the id ref is bound alongside it rather than by
+  // wrapping them in another group -- a wrapper here would sit between a
+  // carefully placed prop and its measured position.
+  const lidId = useSceneId("scene.serve.lid");
+  const scoopId = useSceneId("scene.serve.scoop");
+  const cartonId = useSceneId("scene.serve.carton");
+  const bind = (a2, b2) => (o) => {
+    a2.current = o;
+    b2.current = o;
+  };
+  const { nodes } = useGLTF(SCOOP_MODEL);
+  const { nodes: cartonNodes } = useGLTF(CARTON_MODEL);
+  const { nodes: carafeNodes } = useGLTF(CARAFE_MODEL);
+  const syrupGlb = useGLTF(SYRUP_MODEL);
+  const juiceGlb = useGLTF(JUICE_MODEL);
+  // the flavour is a tint on the shared bottle, so the material is
+  // cloned rather than the geometry -- as the cakes do with icing
+  const chocMats = useMemo(() => {
+    const f = syrupGlb.materials.m_syrup_fill.clone();
+    const l = syrupGlb.materials.m_syrup_label.clone();
+    f.color = new THREE.Color(SYRUPS.chocolate.fill);
+    l.color = new THREE.Color(SYRUPS.chocolate.label);
+    return { fill: f, label: l };
+  }, [syrupGlb]);
   const milkLvl = useRef();
   const waterLvl = useRef();
   const juiceLvl = useRef();
@@ -398,8 +534,12 @@ export default function MilkBar({
       }),
       // dark liquids read wrong under the HDRI unless they are rough and
       // mostly deaf to it — see the note in Vessel.jsx
+      // THE DEMITASSE IS CERAMIC, so this is the liquid's own colour, not
+      // the through-glass one. It used to take POUR_COLOUR.espresso -- the
+      // band colour, mixed dark on purpose to survive the serving glass --
+      // and applied it to an opaque cup, so the shot you carried from the
+      // machine visibly darkened on the walk over. See espressoCss.
       shot: new THREE.MeshStandardMaterial({
-        color: POUR_COLOUR.espresso,
         roughness: 0.62,
         envMapIntensity: 0.25,
       }),
@@ -418,11 +558,17 @@ export default function MilkBar({
         opacity: 0.45,
         side: THREE.DoubleSide,
       }),
+      // WATER HAS TO LOOK LIKE WATER, and opacity is what decides that, not
+      // hue. At 0.62 any pale fill is an opaque column -- and an opaque pale
+      // column in a jug on the back shelf is a jug of MILK, which put two
+      // milk-looking things on a bar where one of them is the carton you
+      // just carried from the cold store. Recolouring it alone did not fix
+      // that; it has to be see-through.
       water: new THREE.MeshStandardMaterial({
         color: POUR_COLOUR.water,
-        roughness: 0.25,
+        roughness: 0.08,
         transparent: true,
-        opacity: 0.62,
+        opacity: 0.26,
       }),
       juice: new THREE.MeshStandardMaterial({ color: JUICE, roughness: 0.4 }),
       carton: new THREE.MeshStandardMaterial({
@@ -440,13 +586,27 @@ export default function MilkBar({
         color: PALETTE.counterTop,
         roughness: 0.8,
       }),
+      // NO COLOUR HERE ON PURPOSE. It is set from the pour that is running,
+      // every frame, before the stream is ever visible -- and a fourth copy
+      // of the espresso constant sitting in an initialiser is exactly how
+      // the shot came to be two different browns in the first place.
       pour: new THREE.MeshStandardMaterial({
-        color: POUR_COLOUR.espresso,
+        color: "#000000",
         roughness: 0.62,
         envMapIntensity: 0.25,
       }),
     }),
     []
+  );
+
+  // SET OUTSIDE THE MEMO, which has no deps on purpose -- these materials
+  // are built once. The shot's colour is the one thing here that moves with
+  // the loop, so it is assigned per render instead.
+  const shotInk = espressoCss(roast, shot);
+  mats.shot.color.set(shotInk);
+  const bandInks = useMemo(
+    () => ({ espresso: espressoBandCss(roast, shot) }),
+    [roast, shot]
   );
 
   // world -> this group's local space; the group is translated only
@@ -631,19 +791,44 @@ export default function MilkBar({
       if (now && pv === "ice") {
         const tipped = posePour("ice", _v);
         scoop.current.position.copy(_v);
-        scoop.current.rotation.z = THREE.MathUtils.lerp(
-          SCOOP_REST,
-          tipped,
-          flowing.tip
-        );
+        const angle = THREE.MathUtils.lerp(SCOOP_REST, tipped, flowing.tip);
+        scoop.current.rotation.z = angle;
         scoop.current.rotation.y = SCOOP_SKEW * (1 - flowing.tip);
         scoop.current.visible = true;
+        // THE CUBES COME OUT OF THE SCOOP'S MOUTH, so the glass is told
+        // where that is rather than guessing at a height above its rim.
+        // Off the angle it is actually DRAWN at, not the angle the pour
+        // ends on: for most of the tip those are not the same, and ice
+        // leaving a scoop that is still turning is the half of the
+        // animation you can see.
+        //
+        // ONLY WHILE IT IS OVER THE GLASS. The scoop keeps moving after the
+        // run — it tips back and carries home — and the cubes do not all
+        // leave on the same frame, so a cube released a beat late off a
+        // live mouth is born in mid-air halfway to the well. Measured: on a
+        // machine drawing 3fps the whole pour lands in two frames and every
+        // cube came out over the counter.
+        if (cup.current && flowing.carry > 0.99) {
+          iceDrop.current.x =
+            _v.x - Math.sin(angle) * _mouthH.ice - cup.current.position.x;
+          iceDrop.current.y =
+            _v.y + Math.cos(angle) * _mouthH.ice - cup.current.position.y;
+          iceDrop.current.z = _v.z - cup.current.position.z;
+        }
       } else {
         const k = THREE.MathUtils.smoothstep(lidK, 0.45, 1);
         scoop.current.position.copy(_home.ice);
         scoop.current.position.y -= (1 - k) * 0.036;
         scoop.current.rotation.set(0, SCOOP_SKEW, SCOOP_REST);
         scoop.current.visible = k > 0.02;
+        // and back to where a pour WOULD tip from, which is the same point
+        // the maths above converges on: MOUTH_X is the glass, so in the
+        // glass's own space the mouth is straight overhead. This is the
+        // fallback for a pour so starved of frames that none of them
+        // caught the scoop in place.
+        iceDrop.current.x = 0;
+        iceDrop.current.y = shape.top + MOUTH_UP;
+        iceDrop.current.z = 0;
       }
     }
 
@@ -660,13 +845,19 @@ export default function MilkBar({
     };
     level(milkLvl, "jug", jugEmpty, 0.008, MILK_LEVEL);
     level(waterLvl, "water", pours.includes("water"), 0.008, WATER_LEVEL);
-    level(juiceLvl, "orange", pours.includes("orange"), 0.008, OJ.h * 0.62);
+    // the jug's fill is modelled, so it scales from its own base instead of
+    // going through level() -- see the note beside it in the JSX
+    if (juiceLvl.current) {
+      const l = left("orange", pours.includes("orange"));
+      juiceLvl.current.visible = l > 0.02;
+      juiceLvl.current.scale.y = Math.max(0.02, l);
+    }
     level(
       shotLvl,
       "espresso",
       pours.includes("espresso"),
       CUP_FLOOR,
-      SHOT_LEVEL
+      shotLevel(shot)
     );
 
     // ---- steam plume, only once the jug has actually arrived ----
@@ -710,7 +901,11 @@ export default function MilkBar({
       const on = liquid && flowing.flow > 0.02 && flowing.flow < 0.99;
       stream.current.visible = on;
       if (on) {
-        mats.pour.color.set(POUR_COLOUR[pouring] ?? POUR_COLOUR.espresso);
+        // espresso in mid-air is the liquid, not the band: the band's
+        // colour is pre-darkened for the glass it will be seen through
+        mats.pour.color.set(
+          pouring === "espresso" ? shotInk : (POUR_COLOUR[pouring] ?? shotInk)
+        );
         const rot = posePour(pv, _v); // _v is the vessel's base
         const h = _mouthH[pv];
         const my = _v.y + Math.cos(rot) * h;
@@ -724,32 +919,8 @@ export default function MilkBar({
       }
     }
 
-    // ---- falling ice ----
-    if (drops.current) {
-      const on = now && pv === "ice" && flowing.flow > 0.01;
-      drops.current.visible = on;
-      if (on) {
-        const rot = posePour("ice", _v);
-        const h = _mouthH.ice;
-        const mx = _v.x - Math.sin(rot) * h;
-        const my = _v.y + Math.cos(rot) * h;
-        drops.current.children.forEach((m, i) => {
-          // staggered, so they tumble out one after another
-          const u = THREE.MathUtils.clamp(
-            flowing.flow * (FALLING + 1) - i,
-            0,
-            1
-          );
-          m.visible = u > 0 && u < 1;
-          m.position.set(
-            mx + (i - 1) * 0.009,
-            THREE.MathUtils.lerp(my, surfaceY, u * u),
-            _v.z + (i - 1) * 0.006
-          );
-          m.rotation.set(u * 5, u * 3.4, u * 4.1);
-        });
-      }
-    }
+    // Nothing here for falling ice: the cubes that fall ARE the cubes in the
+    // glass, and they are integrated by <Ice> from the mouth written above.
 
     // ---- the spoon, for a stir ----
     if (spoon.current) {
@@ -894,6 +1065,9 @@ export default function MilkBar({
             rising={flowing?.flow ?? 1}
             mixed={mixed}
             shape={shape}
+            drop={iceDrop}
+            // the one band whose colour is not a constant
+            inks={bandInks}
           />
           {/* IT IS HOT AND IT SHOULD LOOK IT. Over ice it is not, which is
               the whole difference between the two glasses. */}
@@ -930,13 +1104,6 @@ export default function MilkBar({
       >
         <cylinderGeometry args={[0.0042, 0.0042, 1, 8]} />
       </mesh>
-      <group ref={drops} visible={false}>
-        {Array.from({ length: FALLING }, (_, i) => (
-          <mesh key={i} material={iceMat} raycast={NO_RAYCAST}>
-            <boxGeometry args={[shape.cube, shape.cube, shape.cube]} />
-          </mesh>
-        ))}
-      </group>
 
       {/* ---- shot cup, carried over from the group head ---- */}
       {hasShot && (
@@ -964,7 +1131,12 @@ export default function MilkBar({
             />
             <mesh ref={shotLvl} material={mats.shot}>
               <cylinderGeometry
-                args={[CUP.rInner * 0.97, CUP.rInner * 0.94, SHOT_LEVEL, 14]}
+                args={[
+                  CUP.rInner * 0.97,
+                  CUP.rInner * 0.94,
+                  shotLevel(shot),
+                  14,
+                ]}
               />
             </mesh>
           </group>
@@ -973,112 +1145,95 @@ export default function MilkBar({
 
       {/* ---- THE MILK CARTON, carried out of the fridge ----
               Gone once the milk has been steamed, because then the milk is
-              in the jug and an empty carton on the bar is a dead control
-              standing over a live one. Visibility and the tap are gated on
-              the SAME condition for that reason. */}
+              in the jug and two milk sources standing side by side is a
+              question nobody asked. It DOES stay after a cold pour, which is
+              honest -- the carton is still on the bar -- and safe, because
+              tap() returns before stopPropagation when a source is not
+              pourable, so a spent one never eats the click that would take
+              you somewhere else. */}
       {got("milk") && !steamed && (
         <Select enabled={active && hot === "carton"}>
           <group
-            ref={carton}
+            ref={bind(carton, cartonId)}
             position={[CTN.x, SHELF_TOP, SHELF.z]}
             {...tap("carton", () => onPour?.("milk"), pourable.milk)}
           >
-            {/* body, then the gable and the ridge: a milk carton is a box
-                with a roof, and the roof is what stops it reading as the
-                juice box standing three along the shelf */}
+            {/* the model's origin is its BASE, like fridge.glb's item_milk,
+                so it stands on the riser with no offset to keep in step */}
             <mesh
-              position={[0, CTN.h * 0.36, 0]}
+              geometry={cartonNodes.MilkCarton.geometry}
               material={mats.carton}
               castShadow
-            >
-              <boxGeometry args={[CTN.w, CTN.h * 0.72, CTN.w * 0.88]} />
-            </mesh>
-            <mesh
-              position={[0, CTN.h * 0.84, 0]}
-              rotation={[0, 0, Math.PI / 4]}
-              material={mats.carton}
-              castShadow
-            >
-              <boxGeometry args={[CTN.w * 0.63, CTN.w * 0.63, CTN.w * 0.88]} />
-            </mesh>
-            <mesh position={[0, CTN.h * 1.0, 0]} material={mats.carton}>
-              <boxGeometry args={[CTN.w * 0.12, CTN.w * 0.2, CTN.w * 0.88]} />
-            </mesh>
-            {/* the band that says milk. The fridge's carton is white with a
-                blue label and so is this one — it is meant to be recognised
-                as the thing you just carried, not merely as a carton. */}
-            <mesh position={[0, CTN.h * 0.34, CTN.w * 0.445]}>
-              <boxGeometry args={[CTN.w * 0.94, CTN.h * 0.3, 0.001]} />
-              <meshStandardMaterial color={MILK_LABEL} roughness={0.6} />
-            </mesh>
+            />
           </group>
         </Select>
       )}
 
-      {/* ---- steaming jug: bar equipment, out once there is milk to put in
-              it. It pours the TEXTURED milk only; the cold pour is the
-              carton's job now. ---- */}
-      {got("milk") && (
-        <Select enabled={active && hot === "jug" && !steaming}>
-          <group
-            ref={jug}
-            position={[JUG.x, SHELF_TOP, SHELF.z]}
-            {...tap(
-              "jug",
-              () => onPour?.("milk-steamed"),
-              pourable["milk-steamed"]
-            )}
-          >
-            <mesh position={[0, JUG.h / 2, 0]} material={mats.steel} castShadow>
-              <cylinderGeometry args={[JUG.rTop, JUG.r, JUG.h, 16, 1, true]} />
-            </mesh>
-            <mesh position={[0, 0.004, 0]} material={mats.steel}>
-              <cylinderGeometry args={[JUG.r, JUG.r, 0.008, 16]} />
-            </mesh>
-            {/* spout on -X, handle on -Z: this jug tips towards -X to pour,
+      {/* ---- frothing pitcher: ALWAYS ON THE BAR ----
+              It used to appear only once you had fetched milk, which made a
+              piece of equipment behave like an ingredient -- a steel pitcher
+              is part of the station, the way the carafe and the bell are,
+              and a bar that grows its tools as you need them reads as a menu
+              unfolding rather than a place that was already here.
+              It stands EMPTY until the wand has been in it (see jugEmpty),
+              which is the honest version of the same information.
+              It pours the TEXTURED milk only; the cold pour is the carton's
+              job. Inert until then, and safely so: tap() returns before
+              stopPropagation when a source is not pourable, so it never eats
+              a click meant for something else. ---- */}
+      <Select enabled={active && hot === "jug" && !steaming}>
+        <group
+          ref={jug}
+          position={[JUG.x, SHELF_TOP, SHELF.z]}
+          {...tap(
+            "jug",
+            () => onPour?.("milk-steamed"),
+            pourable["milk-steamed"]
+          )}
+        >
+          <mesh position={[0, JUG.h / 2, 0]} material={mats.steel} castShadow>
+            <cylinderGeometry args={[JUG.rTop, JUG.r, JUG.h, 16, 1, true]} />
+          </mesh>
+          <mesh position={[0, 0.004, 0]} material={mats.steel}>
+            <cylinderGeometry args={[JUG.r, JUG.r, 0.008, 16]} />
+          </mesh>
+          {/* spout on -X, handle on -Z: this jug tips towards -X to pour,
                 so the spout has to be the lip that goes down */}
-            <mesh
-              position={[-JUG.rTop * 0.9, JUG.h * 0.93, 0]}
-              rotation={[0, 0, 0.5]}
-              material={mats.steel}
-              castShadow
-            >
-              <coneGeometry args={[0.016, 0.03, 6, 1, true]} />
-            </mesh>
-            <mesh
-              position={[0, JUG.h * 0.55, -JUG.rTop * 0.95]}
-              rotation={[0, Math.PI / 2, Math.PI * 0.42]}
-              material={mats.steel}
-              castShadow
-            >
-              <torusGeometry args={[0.026, 0.005, 6, 12, Math.PI * 1.15]} />
-            </mesh>
+          <mesh
+            position={[-JUG.rTop * 0.9, JUG.h * 0.93, 0]}
+            rotation={[0, 0, 0.5]}
+            material={mats.steel}
+            castShadow
+          >
+            <coneGeometry args={[0.016, 0.03, 6, 1, true]} />
+          </mesh>
+          <mesh
+            position={[0, JUG.h * 0.55, -JUG.rTop * 0.95]}
+            rotation={[0, Math.PI / 2, Math.PI * 0.42]}
+            material={mats.steel}
+            castShadow
+          >
+            <torusGeometry args={[0.026, 0.005, 6, 12, Math.PI * 1.15]} />
+          </mesh>
 
-            <mesh ref={milkLvl} material={mats.milk}>
-              <cylinderGeometry
-                args={[JUG.r * 1.05, JUG.r * 0.97, MILK_LEVEL, 16]}
-              />
-            </mesh>
-            <mesh ref={froth} material={mats.foam} visible={false}>
-              <cylinderGeometry
-                args={[JUG.r * 1.12, JUG.r * 1.05, 0.022, 16]}
-              />
-            </mesh>
+          <mesh ref={milkLvl} material={mats.milk}>
+            <cylinderGeometry
+              args={[JUG.r * 1.05, JUG.r * 0.97, MILK_LEVEL, 16]}
+            />
+          </mesh>
+          <mesh ref={froth} material={mats.foam} visible={false}>
+            <cylinderGeometry args={[JUG.r * 1.12, JUG.r * 1.05, 0.022, 16]} />
+          </mesh>
 
-            <group ref={puffs} visible={false}>
-              {Array.from({ length: PUFFS }, (_, i) => (
-                <mesh
-                  key={i}
-                  material={mats.steam.clone()}
-                  raycast={NO_RAYCAST}
-                >
-                  <sphereGeometry args={[1, 7, 5]} />
-                </mesh>
-              ))}
-            </group>
+          <group ref={puffs} visible={false}>
+            {Array.from({ length: PUFFS }, (_, i) => (
+              <mesh key={i} material={mats.steam.clone()} raycast={NO_RAYCAST}>
+                <sphereGeometry args={[1, 7, 5]} />
+              </mesh>
+            ))}
           </group>
-        </Select>
-      )}
+        </group>
+      </Select>
 
       {/* ---- water carafe ---- */}
       <Select enabled={active && hot === "water"}>
@@ -1087,12 +1242,16 @@ export default function MilkBar({
           position={[CAR.x, SHELF_TOP, SHELF.z]}
           {...tap("water", () => onPour?.("water"), pourable.water)}
         >
-          <mesh position={[0, CAR.h / 2, 0]} material={mats.glass} castShadow>
-            <cylinderGeometry args={[CAR.rTop, CAR.r, CAR.h, 14, 1, true]} />
-          </mesh>
-          <mesh position={[0, 0.004, 0]} material={mats.glass}>
-            <cylinderGeometry args={[CAR.r, CAR.r, 0.008, 14]} />
-          </mesh>
+          {/* Modelled, not a cylinder. A straight-sided pale vessel next
+              to a milk carton is a GLASS OF MILK, and no amount of recolour
+              or transparency fixed that — the silhouette was the problem.
+              A jug is read by its belly, neck, spout and handle, and those
+              are the four things a cylinder cannot have. */}
+          <mesh
+            geometry={carafeNodes.WaterCarafe.geometry}
+            material={mats.glass}
+            castShadow
+          />
           <mesh ref={waterLvl} material={mats.water}>
             <cylinderGeometry
               args={[CAR.r * 0.94, CAR.r * 0.9, WATER_LEVEL, 14]}
@@ -1109,12 +1268,24 @@ export default function MilkBar({
             position={[SYR.x, SHELF_TOP, SHELF.z]}
             {...tap("choc", () => onPour?.("chocolate"), pourable.chocolate)}
           >
-            <mesh position={[0, SYR.h / 2, 0]} material={mats.syrup} castShadow>
-              <cylinderGeometry args={[SYR.r * 0.92, SYR.r, SYR.h, 12]} />
-            </mesh>
-            <mesh position={[0, SYR.h + 0.012, 0]} material={mats.cap}>
-              <cylinderGeometry args={[0.009, 0.013, 0.024, 10]} />
-            </mesh>
+            <mesh
+              geometry={syrupGlb.nodes.Syrup_Body.geometry}
+              material={syrupGlb.materials.m_syrup_glass}
+              castShadow
+            />
+            <mesh
+              geometry={syrupGlb.nodes.Syrup_Fill.geometry}
+              material={chocMats.fill}
+            />
+            <mesh
+              geometry={syrupGlb.nodes.Syrup_Label.geometry}
+              material={chocMats.label}
+            />
+            <mesh
+              geometry={syrupGlb.nodes.Syrup_Pump.geometry}
+              material={syrupGlb.materials.m_syrup_pump}
+              castShadow
+            />
           </group>
         </Select>
       )}
@@ -1127,31 +1298,36 @@ export default function MilkBar({
             position={[OJ.x, SHELF_TOP, SHELF.z]}
             {...tap("oj", () => onPour?.("orange"), pourable.orange)}
           >
-            <mesh
-              position={[0, OJ.h * 0.38, 0]}
-              material={mats.carton}
-              castShadow
-            >
-              <boxGeometry args={[OJ.w, OJ.h * 0.76, OJ.w * 0.85]} />
-            </mesh>
-            {/* the gable top, which is what makes a box read as a carton */}
-            <mesh
-              position={[0, OJ.h * 0.85, 0]}
-              rotation={[0, 0, Math.PI / 4]}
-              material={mats.carton}
-              castShadow
-            >
-              <boxGeometry args={[OJ.w * 0.66, OJ.w * 0.66, OJ.w * 0.85]} />
-            </mesh>
-            <mesh
-              position={[0, OJ.h * 0.42, OJ.w * 0.43]}
-              material={mats.juice}
-            >
-              <boxGeometry args={[OJ.w * 0.92, OJ.h * 0.4, 0.001]} />
-            </mesh>
-            <mesh ref={juiceLvl} material={mats.juice} visible={false}>
-              <boxGeometry args={[OJ.w * 0.8, OJ.h * 0.62, OJ.w * 0.7]} />
-            </mesh>
+            {/* A JUG, not a second carton and not a third bottle. The milk
+                is already a gable box and the bar already has two tall
+                cylinders; the handled half gallon is the one juice shape
+                that collides with neither. */}
+            {[
+              ["Juice_Body", "m_juice_glass"],
+              ["Juice_Neck", "m_juice_glass"],
+              ["Juice_Handle", "m_juice_glass"],
+              ["Juice_Label", "m_juice_label"],
+              ["Juice_Cap", "m_juice_cap"],
+            ].map(([node, material]) => (
+              <mesh
+                key={node}
+                geometry={juiceGlb.nodes[node].geometry}
+                material={juiceGlb.materials[material]}
+                castShadow
+              />
+            ))}
+            {/* THE FILL DRAINS BY SCALE ALONE, in a group of its own.
+                level() also moves what it scales, which is right for a
+                unit cylinder centred on its origin and wrong for modelled
+                geometry: this mesh's vertices already sit at their real
+                heights, so scaling y about the jug's base is the whole
+                animation and any reposition on top double-counts it. */}
+            <group ref={juiceLvl}>
+              <mesh
+                geometry={juiceGlb.nodes.Juice_Fill.geometry}
+                material={juiceGlb.materials.m_juice_fill}
+              />
+            </group>
           </group>
         </Select>
       )}
@@ -1225,74 +1401,19 @@ export default function MilkBar({
               and the thing reads as a gutter. Past half they lean back in
               and it reads as something that would hold ice. */}
           <group
-            ref={scoop}
+            ref={bind(scoop, scoopId)}
             position={[WELL.x, TOP - 0.012, WELL.z]}
             {...tap("ice", () => onPour?.("ice"), pourable.ice)}
           >
+            {/* Its origin is the BOWL AXIS, which is the point the pour
+                tips it about, so it sits at the same +r the primitives used
+                to put the floor on this group's y=0. */}
             <mesh
+              geometry={nodes.IceScoop.geometry}
               position={[0, SCOOP.r, 0]}
-              rotation={[0, 0, Math.PI / 2]}
               material={mats.steel}
               castShadow
-            >
-              <cylinderGeometry
-                args={[
-                  SCOOP.r,
-                  SCOOP.r,
-                  SCOOP.len,
-                  16,
-                  1,
-                  true,
-                  Math.PI * 0.85,
-                  Math.PI * 1.3,
-                ]}
-              />
-            </mesh>
-            {/* the back, closing the tube at the handle end. Same arc as the
-                tube, so the two share an edge exactly. */}
-            <mesh
-              position={[SCOOP.len / 2, SCOOP.r, 0]}
-              rotation={[0, Math.PI / 2, 0]}
-              material={mats.steel}
-            >
-              <circleGeometry
-                args={[SCOOP.r, 16, Math.PI * 0.85, Math.PI * 1.3]}
-              />
-            </mesh>
-            {/* THE LIP: the floor runs on past the sides. This is the whole
-                difference between a scoop and a cup — it is the part that
-                goes under the ice. */}
-            <mesh
-              position={[-SCOOP.len / 2 - 0.005, 0.0013, 0]}
-              material={mats.steel}
-              castShadow
-            >
-              <boxGeometry args={[0.011, 0.0026, SCOOP.r * 1.45]} />
-            </mesh>
-            {/* the handle: a tube off the back, lifted so the grip clears
-                the ice rather than being buried in it */}
-            <mesh
-              position={[
-                SCOOP.len / 2 - 0.002 + Math.cos(GRIP_A) * SCOOP.grip * 0.5,
-                SCOOP.r * 1.2 + Math.sin(GRIP_A) * SCOOP.grip * 0.5,
-                0,
-              ]}
-              rotation={[0, 0, GRIP_A - Math.PI / 2]}
-              material={mats.steel}
-              castShadow
-            >
-              <cylinderGeometry args={[0.0055, 0.0055, SCOOP.grip, 10]} />
-            </mesh>
-            <mesh
-              position={[
-                SCOOP.len / 2 - 0.002 + Math.cos(GRIP_A) * SCOOP.grip,
-                SCOOP.r * 1.2 + Math.sin(GRIP_A) * SCOOP.grip,
-                0,
-              ]}
-              material={mats.steel}
-            >
-              <sphereGeometry args={[0.0058, 10, 8]} />
-            </mesh>
+            />
             {/* what is in it, until it has been tipped into the glass */}
             {!pours.includes("ice") &&
               [
@@ -1316,11 +1437,19 @@ export default function MilkBar({
         </group>
       </Select>
 
+      {/* The well is a HOLE, so there is no mesh to hang an id on; this
+          marker sits at its centre so `scene.serve.well` has somewhere to
+          point. */}
+      <IdTag
+        id="scene.serve.well"
+        position={[WELL.x, TOP - WELL.deep / 2, WELL.z]}
+      />
+
       {/* ---- THE LID. It opens because you arrived; see the frame loop.
               The text is deliberately OUTSIDE the Select: troika renders a
               glyph quad, and the outline pass traces that quad rather than
               the letters, which is a rectangle hanging in mid-air. ---- */}
-      <group ref={lid} position={[WELL.x, TOP + 0.0015, HINGE_Z]}>
+      <group ref={bind(lid, lidId)} position={[WELL.x, TOP + 0.0015, HINGE_Z]}>
         <Select enabled={active && hot === "ice"}>
           <group {...tap("ice", () => onPour?.("ice"), pourable.ice)}>
             <mesh position={[0, 0, LID.d / 2]} material={mats.steel} castShadow>
@@ -1353,6 +1482,7 @@ export default function MilkBar({
             the right way up once the lid is open, which is the only
             distance it can be read from. */}
         <Text
+          font={FONT}
           position={[0, LID.t / 2 + 0.0009, LID.d * 0.46]}
           rotation={[-Math.PI / 2, 0, Math.PI]}
           fontSize={0.0135}
@@ -1372,7 +1502,7 @@ export default function MilkBar({
               space in front for things that actually go in the glass. ---- */}
       <Select enabled={active && hot === "bell"}>
         <group
-          position={[BELL.x, SHELF_TOP, SHELF.z]}
+          position={[BELL.x, TOP, BELL.z]}
           {...tap("bell", onServe, canServe)}
         >
           <mesh position={[0, 0.006, 0]} material={mats.brass} castShadow>
@@ -1395,3 +1525,9 @@ export default function MilkBar({
 }
 
 const NO_RAYCAST = () => null;
+
+useGLTF.preload(SCOOP_MODEL);
+useGLTF.preload(CARTON_MODEL);
+useGLTF.preload(CARAFE_MODEL);
+useGLTF.preload(SYRUP_MODEL);
+useGLTF.preload(JUICE_MODEL);

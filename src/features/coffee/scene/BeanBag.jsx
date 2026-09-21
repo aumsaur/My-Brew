@@ -4,6 +4,10 @@ import { useGLTF, useCursor, Text } from "@react-three/drei";
 import { Select } from "@react-three/postprocessing";
 import * as THREE from "three";
 
+// Everything painted on a thing in this room is LETTERED in the same hand;
+// see scene/WallSign. A mix of faces reads as accidental.
+const FONT = `${import.meta.env.BASE_URL}fonts/Tealand.ttf`;
+
 // One bag model, varied per origin by DATA:
 //   label colour = roast level, <Text> = origin name, jitter = not-cloned look.
 // Adding a bean is a row in data/beans.js, never a new mesh.
@@ -39,39 +43,17 @@ export default function BeanBag({
     return m;
   }, [materials, tieColor]);
 
-  // THE CHOSEN BAG STEPS OUT OF THE ROW. Picking one used to change nothing
-  // you could see on the shelf — an outline you had to already be looking
-  // for, and a line of HUD text across the screen — so the most important
-  // choice in the loop was also its least visible. Now it comes forward and
-  // lifts, the way you would actually pull a bag off a shelf, and stays
-  // there for as long as it is yours.
-  const g = useRef();
-  useFrame((_state, delta) => {
-    if (!g.current) return;
-    const k = selected ? 1 : 0;
-    g.current.position.z = THREE.MathUtils.damp(
-      g.current.position.z,
-      position[2] + k * 0.07,
-      6,
-      delta
-    );
-    g.current.position.y = THREE.MathUtils.damp(
-      g.current.position.y,
-      position[1] + k * 0.018,
-      6,
-      delta
-    );
-    g.current.rotation.y = THREE.MathUtils.damp(
-      g.current.rotation.y,
-      rotation[1] + k * (0.5 - rotation[1]),
-      5,
-      delta
-    );
-  });
+  // THE BAG STAYS IN THE ROW. It used to step forward 70mm and lift, as a
+  // way of showing which one was yours — that was written before there was
+  // an inventory, when the only other cue was an outline you had to already
+  // be looking for. The hotbar names the bean and shows its roast now, so
+  // the shelf does not also have to mime it, and a bag that is supposedly in
+  // your hands while still sitting on the shelf was always the odd part of
+  // it. The hover/selected outline stays; that is a cursor cue, not a claim
+  // about where the bag is.
 
   return (
     <group
-      ref={g}
       position={position}
       rotation={rotation}
       scale={scale}
@@ -85,7 +67,8 @@ export default function BeanBag({
       }}
       onPointerOut={() => setHovered(false)}
     >
-      {/* <Select> wraps ONLY the geometry. Keeping <Text> out of it is not
+      {/* <Select> wraps ONLY the geometry. Keeping <Text
+        font={FONT}> out of it is not
           cosmetic: the Outline pass overrides materials to build its selection
           mask, which discards troika's alpha cutout, so a selected text mesh
           outlines as its full bounding QUAD — a rectangle floating behind the
@@ -106,6 +89,7 @@ export default function BeanBag({
 
       {name ? (
         <Text
+          font={FONT}
           position={[0, 0.067, -0.0345]}
           fontSize={0.0095}
           letterSpacing={0.08}

@@ -8,6 +8,7 @@ import {
 import { tasteNotes, tasteHeadline } from "@/features/coffee/data/taste";
 import { verdictFor } from "@/features/coffee/data/verdict";
 import { POUR_LABEL } from "@/features/coffee/data/drinks";
+import { uiId } from "@/features/coffee/ids";
 
 // The end of the loop, and the only screen in this app that looks back.
 //
@@ -22,6 +23,7 @@ import { POUR_LABEL } from "@/features/coffee/data/drinks";
 function Spec({ label, value, tint }) {
   return (
     <div
+      {...uiId("drink-card")}
       style={{
         display: "flex",
         justifyContent: "space-between",
@@ -40,7 +42,11 @@ export default function DrinkCard({ flow, onAgain }) {
   if (!flow || flow.stage !== "served") return null;
   const { drink, beanData, roast, ground, shot, burnt, pours, art, stirred } =
     flow;
-  const notes = tasteNotes({ bean: beanData, roast, shot, burnt, pours });
+  // the drink resolver marks anything with no shot in it; see withoutCoffee
+  const noCoffee = drink?.coffee === false;
+  const notes = noCoffee
+    ? []
+    : tasteNotes({ bean: beanData, roast, shot, burnt, pours });
   const verdict = verdictFor({
     bean: beanData,
     roast,
@@ -97,7 +103,9 @@ export default function DrinkCard({ flow, onAgain }) {
               opacity: 0.85,
             }}
           >
-            {tasteHeadline({ bean: beanData, roast, burnt, pours })}
+            {noCoffee
+              ? "no coffee was involved"
+              : tasteHeadline({ bean: beanData, roast, burnt, pours })}
           </span>
         </div>
         <div style={{ fontSize: 27, letterSpacing: 0.4, marginTop: 4 }}>
@@ -106,21 +114,29 @@ export default function DrinkCard({ flow, onAgain }) {
         <div style={{ opacity: 0.6, fontSize: 12 }}>{drink.of}</div>
 
         <div style={{ marginTop: 15, fontSize: 12 }}>
-          <Spec
-            label="bean"
-            value={beanData ? `${beanData.name} · ${beanData.region}` : "—"}
-            tint={accentColor(beanData)}
-          />
-          <Spec
-            label="roast"
-            value={`${roastLabel(roast)} · ${(roast * 100).toFixed(0)}%`}
-            tint={burnt ? "#ff7a4d" : roastCss(roast)}
-          />
-          <Spec label="grind" value={grindLabel(ground)} />
-          <Spec
-            label="shot"
-            value={`${shotLabel(shot)} · ${(shot * 100).toFixed(0)}%`}
-          />
+          {/* FOUR SPECS ABOUT A BEAN, dropped when no bean was used. A glass
+              of chocolate syrup reporting "roast · green · 0%" and "shot ·
+              0%" reads as a bug in the receipt rather than as a joke about
+              the drink -- and the joke is the point of serving one. */}
+          {!noCoffee && (
+            <>
+              <Spec
+                label="bean"
+                value={beanData ? `${beanData.name} · ${beanData.region}` : "—"}
+                tint={accentColor(beanData)}
+              />
+              <Spec
+                label="roast"
+                value={`${roastLabel(roast)} · ${(roast * 100).toFixed(0)}%`}
+                tint={burnt ? "#ff7a4d" : roastCss(roast)}
+              />
+              <Spec label="grind" value={grindLabel(ground)} />
+              <Spec
+                label="shot"
+                value={`${shotLabel(shot)} · ${(shot * 100).toFixed(0)}%`}
+              />
+            </>
+          )}
           {/* THE ORDER, spelled out — it is what the name was decided by,
               so hiding it would make the drink look arbitrary */}
           <Spec
@@ -166,7 +182,9 @@ export default function DrinkCard({ flow, onAgain }) {
             {verdict.line}
           </div>
           <div style={{ fontSize: 10, opacity: 0.32, marginTop: 7 }}>
-            (it does not, it is coffee)
+            {noCoffee
+              ? "(it does not, and this one is not even coffee)"
+              : "(it does not, it is coffee)"}
           </div>
         </div>
 

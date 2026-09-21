@@ -25,7 +25,7 @@ export const LAYOUT = {
   shelf: { x: 0.42, y: 1.34, z: -0.28, w: 1.05, t: 0.05, d: 0.22 },
 
   machine: {
-    pos: [-0.46, 0.92, 0.0],
+    pos: [-0.31, 0.92, 0.0], // +0.15 with the group - see serve
     scale: 0.58,
     model: { c: [0.0, 0.4, 0.0669], size: [0.52, 0.8, 0.6939] },
     foot: { c: [0.0, 0.01], r: 0.29 },
@@ -34,7 +34,7 @@ export const LAYOUT = {
     inspect: { view: [0.05, 0.22, 1], fit: 0.95 },
   },
   roaster: {
-    pos: [0.14, 0.944, 0.05],
+    pos: [0.2, 0.944, 0.05], // +0.15 with the group, then -0.09 - see serve
     scale: 1.39,
     model: { c: [0.016, 0.0721, 0.0045], size: [0.2061, 0.1442, 0.1351] },
     foot: { c: [0.0, 0.0045], r: 0.0871 },
@@ -43,7 +43,7 @@ export const LAYOUT = {
     inspect: { view: [0.1, 0.34, 1], fit: 0.95 },
   },
   grinder: {
-    pos: [0.45, 0.944, 0.03],
+    pos: [0.51, 0.944, 0.03], // +0.15 with the group, then -0.09 - see serve
     scale: 0.73,
     model: { c: [0.0203, 0.129, 0.0], size: [0.1053, 0.258, 0.0669] },
     foot: { c: [0.0, 0.0], r: 0.0315 },
@@ -65,15 +65,27 @@ export const LAYOUT = {
     fit: 1.5,
     inspect: { view: [0.0, 0.14, 1], fit: 1.1 },
   },
-  // The finishing station. Built from primitives (see scene/MilkBar), so
+  // The finishing station. Built from primitives (see scene/ServeStation), so
   // `model` is the tray-and-contents box rather than a measured GLB — the one
   // entry here that is authored rather than read off an export.
-  milkbar: {
-    // x: the tray is 0.42 wide and the counter runs -1.10..1.10, so -0.92 hung
-    // the station 10mm PAST the left edge - board, beacon ring and all. -0.855
-    // centres it in the gap between the counter edge and the machine's left
-    // face (-0.611): 35mm of counter on one side, 34mm on the other.
-    pos: [-0.855, 0.92, 0.04],
+  serve: {
+    // ROASTER AND GRINDER CAME BACK LEFT 90mm after the group move. The
+    // uniform +0.15 kept every gap but left a 307mm hole between the
+    // machine and the roaster — the middle of the counter reading as a gap
+    // rather than as space. They now sit 217mm off the machine, and the
+    // room to their right is the walk to the cold store.
+    //
+    // THE WHOLE COUNTER GROUP MOVED INBOARD BY 150mm (was -0.855).
+    //
+    // -0.855 left the 0.42-wide board ending at -1.065 against a counter edge
+    // at -1.10: 35mm, which reads as falling off. Meanwhile everything was
+    // bunched left and 600mm of counter sat empty on the right.
+    //
+    // The shift is UNIFORM across serve/machine/roaster/grinder, so every
+    // gap between props is exactly what it was - only the margins change.
+    // Now 185mm of counter to the left and ~450mm to the right, and the wider
+    // right side is the approach to the fridge, so it wants the room.
+    pos: [-0.705, 0.92, 0.04],
     scale: 1,
     // Authored, not measured - see above. `size[1]` covers a POUR, not the
     // resting station: a carafe carried over the glass stands 0.31 up, and
@@ -83,6 +95,27 @@ export const LAYOUT = {
     view: [-0.12, 0.42, 1],
     fit: 1.5,
     inspect: { view: [-0.1, 0.34, 1], fit: 1.1 },
+  },
+  // THE CAKE FRIDGE: a glass-doored display cabinet standing on the floor,
+  // NOT built into the counter. The first attempt cut it into the counter's
+  // front and that is not what a cafe looks like -- the cake case is its own
+  // piece of furniture you walk up to.
+  //
+  // It MIRRORS THE COLD STORE. That one stands at x 1.36 and the overview
+  // frame runs about -1.26..1.02, so it is half out of shot at the right and
+  // reached by clicking its sign. -1.42 gives the room the same bookend on
+  // the left, and the counter's left end at -1.10 leaves 0.1m of daylight.
+  //
+  // `pos` is the FLOOR, like the cold store's, so `c` lifts to the centre.
+  display: {
+    pos: [-1.42, 0, -0.02],
+    scale: 1,
+    model: { c: [0.0, 0.775, 0.0], size: [0.6, 1.55, 0.56] },
+    // a touch off-axis, so the door's glass reads as glass rather than as a
+    // flat grey pane straight on
+    view: [-0.24, 0.1, 1],
+    fit: 1.2,
+    inspect: { view: [-0.16, 0.06, 1], fit: 0.95 },
   },
   fridge: {
     pos: [1.36, 0, -0.04],
@@ -171,8 +204,8 @@ export function topOf(key) {
  * (0.178, 0.428, 0.15) and its tip reaches 0.254 below that, and the grate
  * tops out at y = 0.14. Re-measure if the machine is re-exported.
  *
- * Lives here rather than in MilkBar because it is a fact about the MACHINE,
- * and MilkBar has no reason to load the machine's GLB to find it out.
+ * Lives here rather than in ServeStation because it is a fact about the MACHINE,
+ * and ServeStation has no reason to load the machine's GLB to find it out.
  */
 export function steamPose() {
   const m = LAYOUT.machine;
