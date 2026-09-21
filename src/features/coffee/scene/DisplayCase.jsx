@@ -5,6 +5,10 @@ import { useCursor, useGLTF, Text } from "@react-three/drei";
 import { Select } from "@react-three/postprocessing";
 import { LAYOUT, framingDistance, viewDir } from "@/features/coffee/layout";
 import { CAKES } from "@/features/coffee/data/stash";
+import {
+  setHovered as setHoveredLabel,
+  clearHovered,
+} from "@/features/coffee/hover";
 
 // THE CAKE FRIDGE, and where the portfolio lives now.
 //
@@ -293,8 +297,14 @@ export default function DisplayCase({ active = false, onPick, onClick }) {
           entry={entry}
           y={CAKE_SHELVES[i] + 0.006}
           hovered={hot === entry.node && active}
-          onOver={() => setHot(entry.node)}
-          onOut={() => setHot((h) => (h === entry.node ? null : h))}
+          onOver={() => {
+            setHot(entry.node);
+            setHoveredLabel(entry.label);
+          }}
+          onOut={() => {
+            setHot((h) => (h === entry.node ? null : h));
+            clearHovered(entry.label);
+          }}
           // From across the room a cake is not dead, it IS the cabinet: it
           // stopPropagation()s, so without this the click would be eaten and
           // the fly-to would never happen.

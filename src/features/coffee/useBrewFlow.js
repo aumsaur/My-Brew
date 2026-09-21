@@ -109,7 +109,7 @@ function hintFor({
 
   if (stage === "finish") {
     if (!glass) {
-      return "take a glass off the shelf — a cup, or a tall one for ice";
+      return "take a vessel off the wall — a paper cup, or a tall glass";
     }
     if (!stocked.length) {
       return "ice is in the well. the cold store has milk, juice and chocolate";
@@ -182,6 +182,10 @@ export function useBrewFlow() {
   // and reattaching sixty times a second.
   const poursNow = useRef(pours);
   poursNow.current = pours;
+  // and the same trick for the vessel, so clicking a dispenser can ask
+  // "am I already holding this one?" without rebuilding takeGlass per change
+  const glassNow = useRef(glass);
+  glassNow.current = glass;
 
   /**
    * Put the bag back and forget the chain it started: roast, grind,
@@ -320,9 +324,56 @@ export function useBrewFlow() {
   // it is always available and so can no longer imply anything. Two glasses
   // on the shelf, take the one you want; the drink you get is still decided
   // entirely by what goes in it.
+  /**
+   * TIP THE VESSEL OUT. Everything in it goes, and so does anything the bar
+   * cannot make a second time.
+   *
+   * Two ingredients are single-use, and forgetting either one is a duplication
+   * bug rather than a cosmetic one:
+   *
+   *   THE SHOT. `pourable.espresso` is gated on `!poured("espresso")`, so
+   *   clearing `pours` alone would re-open the pour with the same espresso —
+   *   one pull, unlimited shots. It goes down the sink with the drink, and
+   *   the loop rewinds to the machine so there is a way to pull another. The
+   *   portafilter is still locked, so that is one click away, not five.
+   *
+   *   THE STEAMED MILK. Same shape: `pourable["milk-steamed"]` only asks
+   *   whether the jug was steamed, so an un-cleared `steamed` is a jug that
+   *   pours for ever. The carton stays on the bar — a carton holds more than
+   *   one drink — so re-steaming is available immediately.
+   *
+   * Ice, water, juice and syrup are all effectively bottomless at the bar, so
+   * they need no accounting: you just poured some away.
+   */
+  const tipOut = useCallback(() => {
+    const had = poursNow.current;
+    setPours([]);
+    setStirred(false);
+    setPouring(null);
+    if (had.includes("milk-steamed")) setSteamed(false);
+    if (had.includes("espresso")) {
+      setShot(0);
+      setStage((st) => (st === "finish" ? "brew" : st));
+    }
+  }, []);
+
+  // YOU PICK THE VESSEL, AND YOU CAN UNPICK IT. One dispenser click does all
+  // three things, decided by what you are already holding: take, swap, or put
+  // it back. There is no separate bin because there does not need to be — the
+  // fixture that gave you the cup is the obvious place to give it back, and a
+  // bin standing on the bar would cost counter space the station has spent
+  // three passes clearing.
+  //
+  // It is deliberately DESTRUCTIVE and deliberately never blocked. Nothing in
+  // this room stops you making a bad decision; the receipt just notices. See
+  // SIDE_EYE in data/verdict for the other half of that bargain.
   const takeGlass = useCallback(
-    (kind) => setGlass(kind === "tall" ? "tall" : "mug"),
-    []
+    (kind) => {
+      const want = kind === "tall" ? "tall" : "mug";
+      tipOut();
+      setGlass(glassNow.current === want ? null : want);
+    },
+    [tipOut]
   );
   // Putting something back. The bin is the only gesture that can empty a
   // slot you did not mean to fill -- without it a trip to the cold store was
@@ -430,10 +481,12 @@ export function useBrewFlow() {
             ? "fridge"
             : "serve"
           : (NEXT_STATION[stage] ?? null),
-      // Still clickable while the glass is empty: fetch ice after taking a
-      // cup and the rack swaps it for the tall one, rather than stranding
-      // you with the wrong vessel and no way back to the right one.
-      canTakeGlass: idle && (!glass || pours.length === 0),
+      // ALWAYS, as long as nothing is animating. It used to close the
+      // moment the first thing went in — take the paper cup, pour the ice,
+      // and the tall glass you actually wanted was gone for the rest of the
+      // drink. `idle` is the only real constraint: a vessel that changes
+      // mid-pour would leave a stream falling into nothing.
+      canTakeGlass: idle,
       // Steaming does not need a glass — it is about the milk, not the drink —
       // but it does need milk that has not already gone in cold.
       canSteam: idle && got("milk") && !steamed && !anyMilk,

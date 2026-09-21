@@ -1,10 +1,13 @@
-import { useMemo, useRef, useState } from "react";
-import { useFrame } from "@react-three/fiber";
+import { useMemo, useState } from "react";
 import * as THREE from "three";
-import { useGLTF, useCursor, Text } from "@react-three/drei";
+import { useGLTF, useCursor } from "@react-three/drei";
 import { Select } from "@react-three/postprocessing";
 import { LAYOUT } from "@/features/coffee/layout";
 import { GROCERIES, FRIDGE_DRESSING } from "@/features/coffee/data/stash";
+import {
+  setHovered as setHoveredLabel,
+  clearHovered,
+} from "@/features/coffee/hover";
 
 // WHAT IS IN THE COLD STORE.
 //
@@ -18,6 +21,12 @@ import { GROCERIES, FRIDGE_DRESSING } from "@/features/coffee/data/stash";
 // nothing else happens: no card, and no flying the item up to the camera,
 // because there is no longer anything on it to read. That is the same
 // argument the bean bags' lift lost — the inventory slot IS the feedback.
+//
+// NO SHELF TAGS EITHER. Each item used to carry a lettered plate standing in
+// front of it, and at the distance the station camera actually watches from
+// they were three unreadable smudges competing with the things they named.
+// Naming moved to the hover readout over the hotbar, which is sized for the
+// screen instead of for the shelf — see features/coffee/hover.
 //
 // WHAT IS ON THESE SHELVES IS SUPPLY, not the bar's own containers: a
 // gallon of syrup rather than the pump bottle it fills, a bag-in-box rather
@@ -33,18 +42,6 @@ const url = (m) => `${import.meta.env.BASE_URL}models/${m}`;
 
 // front edge of fridge_shelves, in MODEL units — where a shop puts its tags
 const SHELF_FRONT_Z = 0.255;
-
-// Shelf tag, sized in WORLD metres so the type stays legible whatever the
-// fridge is scaled to. Bare floating text read as debris; a plate behind it
-// makes it a printed label, which is what it is.
-const TAG_H = 0.03;
-const TAG_PAD = 0.022;
-const TAG_CHAR = 0.0108;
-const TAG_FONT = 0.017;
-const TAG_TILT = -0.42; // leaned back, so the face angles up at the viewer
-const TAG_INK = "#f3ece0";
-const TAG_PLATE = "#3f4b45";
-const FONT = `${import.meta.env.BASE_URL}fonts/Tealand.ttf`;
 
 const NO_RAYCAST = () => null;
 
@@ -93,100 +90,55 @@ function worldAt(at) {
   ];
 }
 
-function Grocery({ entry, open, taken, reveal, onStock }) {
+function Grocery({ entry, open, taken, onStock }) {
   const { nodes } = useGLTF(MODEL);
   const prop = useProp(entry.model, entry.tint);
   const [hovered, setHovered] = useState(false);
-  const label = useRef();
-  const plate = useRef();
-  const type = useRef();
   useCursor(hovered && open && !taken);
 
   // the SLOT comes from fridge.glb — that node is where this thing stands —
   // while the thing itself is its own model at its own scale
   const slot = nodes[entry.node];
   const pos = worldAt([slot.position.x, slot.position.y, slot.position.z]);
-
-  useFrame(() => {
-    if (!label.current) return;
-    const o = reveal.current * (taken ? 0.25 : 1);
-    label.current.visible = o > 0.02;
-    if (plate.current) plate.current.opacity = o;
-    if (type.current?.material) {
-      type.current.material.transparent = true;
-      type.current.material.opacity = o;
-      type.current.material.depthWrite = false;
-    }
-  });
-
   const live = open && !taken;
+  // what the readout says. `taken` is part of it: pointing at a gap where
+  // the milk was should say so, not go silent.
+  const say = taken ? `${entry.label} — taken` : entry.label;
 
   return (
-    <>
-      <group position={pos}>
-        <Select enabled={hovered && live}>
-          <primitive object={prop.object} />
-        </Select>
-        {/* ONE HIT BOX over the whole thing rather than per-mesh raycasts.
-            These props are four to six meshes each — a jug is body, neck,
-            handle, label, cap, fill — and a box round the lot is both
-            cheaper and kinder to aim at than the gaps between them. */}
-        <mesh
-          position={[0, prop.size.y / 2, 0]}
-          visible={live}
-          onClick={(e) => {
-            if (!live) return;
-            e.stopPropagation();
-            onStock?.(entry.stocks);
-          }}
-          onPointerOver={(e) => {
-            if (!live) return;
-            e.stopPropagation();
-            setHovered(true);
-          }}
-          onPointerOut={() => setHovered(false)}
-        >
-          <boxGeometry
-            args={[prop.size.x * 1.1, prop.size.y, prop.size.z * 1.1]}
-          />
-          <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-        </mesh>
-      </group>
-
-      {/* The TEXT is outside any <Select>: the outline pass overrides
-          materials for its mask and discards troika's alpha cutout, so text
-          inside a selection outlines as its bounding rectangle. */}
-      <group
-        ref={label}
-        position={worldAt([slot.position.x, slot.position.y, SHELF_FRONT_Z])}
-        rotation={[TAG_TILT, 0, 0]}
+    <group position={pos}>
+      <Select enabled={hovered && live}>
+        <primitive object={prop.object} />
+      </Select>
+      {/* ONE HIT BOX over the whole thing rather than per-mesh raycasts.
+          These props are four to six meshes each — a gallon is body, fill,
+          label, cap, handle — and a box round the lot is both cheaper and
+          kinder to aim at than the gaps between them. */}
+      <mesh
+        position={[0, prop.size.y / 2, 0]}
+        visible={live}
+        onClick={(e) => {
+          if (!live) return;
+          e.stopPropagation();
+          onStock?.(entry.stocks);
+        }}
+        onPointerOver={(e) => {
+          if (!open) return;
+          e.stopPropagation();
+          setHovered(true);
+          say && setHoveredLabel(say);
+        }}
+        onPointerOut={() => {
+          setHovered(false);
+          clearHovered(say);
+        }}
       >
-        <mesh raycast={NO_RAYCAST}>
-          <boxGeometry
-            args={[TAG_PAD + entry.label.length * TAG_CHAR, TAG_H, 0.004]}
-          />
-          <meshStandardMaterial
-            ref={plate}
-            color={TAG_PLATE}
-            roughness={0.7}
-            transparent
-          />
-        </mesh>
-        <Text
-          ref={type}
-          font={FONT}
-          position={[0, 0, 0.004]}
-          fontSize={TAG_FONT}
-          letterSpacing={0.02}
-          color={TAG_INK}
-          anchorX="center"
-          anchorY="middle"
-          raycast={NO_RAYCAST}
-        >
-          {taken ? "taken" : entry.label}
-        </Text>
-      </group>
-    </>
+        <boxGeometry
+          args={[prop.size.x * 1.1, prop.size.y, prop.size.z * 1.1]}
+        />
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+      </mesh>
+    </group>
   );
 }
 
@@ -210,13 +162,6 @@ function Dressing({ item }) {
  * @param onStock  (kind) => void
  */
 export default function StashShelf({ open = false, stocked = [], onStock }) {
-  const reveal = useRef(0);
-  useFrame((_state, delta) => {
-    // tags fade with the door rather than popping with the click
-    reveal.current +=
-      ((open ? 1 : 0) - reveal.current) * Math.min(1, delta * 6);
-  });
-
   return (
     <group>
       {GROCERIES.map((entry) => (
@@ -225,7 +170,6 @@ export default function StashShelf({ open = false, stocked = [], onStock }) {
           entry={entry}
           open={open}
           taken={stocked.includes(entry.stocks)}
-          reveal={reveal}
           onStock={onStock}
         />
       ))}

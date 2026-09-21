@@ -1,5 +1,6 @@
 import { memo, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
+import { useGLTF } from "@react-three/drei";
 import * as THREE from "three";
 import { CUP, useArtTexture, useIceMaterial } from "@/features/coffee/cup";
 import { stackOf } from "@/features/coffee/data/drinks";
@@ -544,7 +545,30 @@ export function Contents({
 
 /** The vessel itself — foot, inside floor, open wall, and a handle if it is
     the kind of vessel that has one. The tall glass is not. */
+/** A vessel that is a MODEL rather than a stack of primitives. Its own
+    component so the GLB hook is not called conditionally. */
+function ModelledCup({ file }) {
+  const { nodes, materials } = useGLTF(
+    `${import.meta.env.BASE_URL}models/${file}`
+  );
+  return (
+    <>
+      <mesh
+        geometry={nodes.Cup_Body.geometry}
+        material={materials.m_paper}
+        castShadow
+      />
+      <mesh geometry={nodes.Cup_Rim.geometry} material={materials.m_paper} />
+      <mesh
+        geometry={nodes.Cup_Band.geometry}
+        material={materials.m_paper_band}
+      />
+    </>
+  );
+}
+
 export function CupBody({ material, rim = null, shape = CUP }) {
+  if (shape.model) return <ModelledCup file={shape.model} />;
   return (
     <>
       <mesh position={[0, shape.baseH / 2, 0]} material={material} castShadow>

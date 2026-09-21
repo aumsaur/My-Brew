@@ -156,6 +156,68 @@ const FALLBACK = {
   line: "Nothing unusual happened here, and that is its own kind of achievement. You know what you like and you went and made it.",
 };
 
+// THE SIDE-EYE: one raised eyebrow about the VESSEL, not about the drink.
+//
+// The bar does not stop you doing anything. You can take the tall glass for
+// a single espresso, put ice in a paper cup, pour boiling water onto the
+// rocks — every one of those is allowed, and none of them changes what the
+// drink is called. An espresso in a highball is still an Espresso.
+//
+// So this is the whole of the consequence: the receipt notices, and says
+// something. That is deliberately the cheapest possible punishment, because
+// the alternative — refusing the pour, or renaming the drink — is a lock,
+// and locks are what this station spent three passes getting rid of.
+//
+// First match wins, and most cups match nothing at all. A remark that fires
+// every time is not a remark, it is a status bar.
+const SIDE_EYE = [
+  {
+    id: "espresso-highball",
+    when: ({ p, bands, glass }) =>
+      glass === "tall" && bands === 1 && p.has("espresso") && !p.has("ice"),
+    line: "A single espresso. In a 140mm glass. It is down there somewhere — you may need to go in after it.",
+  },
+  {
+    id: "espresso-rocks",
+    when: ({ p, bands }) => bands === 1 && p.has("espresso") && p.has("ice"),
+    line: "Espresso. On ice. Nothing else. Really? That is not a coffee, that is a small dark grudge.",
+  },
+  {
+    id: "hot-on-ice",
+    when: ({ p }) => p.has("ice") && p.has("water"),
+    line: "Ice in first, then boiling water straight onto it. One of those two decisions was wrong and you will find out which.",
+  },
+  {
+    id: "steamed-on-ice",
+    when: ({ p }) => p.has("ice") && p.has("milk-steamed"),
+    line: "You steamed the milk. Specially. Held the jug under the wand and everything. Then you put it on a rock.",
+  },
+  {
+    id: "ice-in-paper",
+    when: ({ p, glass }) => glass === "mug" && p.has("ice"),
+    line: "Ice, in a paper cup. That is going to be a wet hand in about four minutes and a wet table after that.",
+  },
+  {
+    id: "overfilled",
+    when: ({ pours, glass }) => glass === "mug" && pours.length >= 4,
+    line: "Four things. In a takeaway cup. A good deal of this drink is on the counter and we are both going to pretend otherwise.",
+  },
+  {
+    id: "hot-in-highball",
+    when: ({ p, glass }) =>
+      glass === "tall" &&
+      !p.has("ice") &&
+      (p.has("water") || p.has("milk-steamed")),
+    line: "Hot, in a tall glass, with nothing cold in it. No handle either. Hold it by what, exactly?",
+  },
+  {
+    id: "juice-cup",
+    when: ({ p, glass, bands }) =>
+      glass === "mug" && bands === 1 && p.has("orange"),
+    line: "Orange juice. In an espresso cup. It is a shot of orange juice. Somebody somewhere is charging four pounds for this.",
+  },
+];
+
 /**
  * A playful title for the cup, from what actually went into it.
  *
@@ -172,6 +234,10 @@ export function verdictFor({
   pours = [],
   stirred = false,
   art = false,
+  // WHICH VESSEL IT WENT INTO. Read only by the side-eye — no title below
+  // depends on it, because what you poured is the drink and what you poured
+  // it into is a comment.
+  glass = null,
 }) {
   const ctx = {
     bean,
@@ -181,6 +247,7 @@ export function verdictFor({
     pours,
     stirred,
     art,
+    glass,
     p: new Set(pours),
     // ORDER WITHOUT THE ICE. Ice is poured first almost every time, which
     // shifts everything else along one and made "milk went in first" — the
@@ -189,5 +256,9 @@ export function verdictFor({
     bands: pours.filter((k) => k !== "ice").length,
     headline: tasteHeadline({ bean, roast, burnt, pours }),
   };
-  return VERDICTS.find((v) => v.when(ctx)) ?? FALLBACK;
+  return {
+    ...(VERDICTS.find((v) => v.when(ctx)) ?? FALLBACK),
+    // null on any cup that is not asking for it, which is most of them
+    aside: SIDE_EYE.find((v) => v.when(ctx))?.line ?? null,
+  };
 }

@@ -33,6 +33,9 @@ tmp-*
 *.sln
 *.sw?
 
+# Style references: other people's photographs, kept locally to model from
+.dev/ref/
+
 # Blender autosaves and hand-made backups — the .blend beside them is the source
 *.blend1
 .dev/blender/*.pre-*.blend

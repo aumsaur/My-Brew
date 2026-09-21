@@ -1,4 +1,5 @@
 import { uiId } from "@/features/coffee/ids";
+import { useHovered } from "@/features/coffee/hover";
 import { useState } from "react";
 import {
   roastCss,
@@ -243,9 +244,24 @@ function Ring({ label, value = 0, colour, title }) {
   );
 }
 
+// How wide the hotbar row comes out: four slots, three gaps, and its own
+// padding either side. The bin is placed off this rather than off the
+// window, so the two stay together at any width.
+const ROW_W = SLOT * 4 + 6 * 3 + 12;
+
 /**
- * THE BIN. Bottom right, away from the hotbar, because the one gesture you
- * must not fire by accident is the one that throws something away.
+ * THE BIN, just off the end of the hotbar.
+ *
+ * It was pinned to the bottom-right CORNER of the window, on the theory that
+ * the gesture you must not fire by accident should be far from everything
+ * else. Too far: on a wide monitor it is most of a screen away from the
+ * slot it acts on, so the one control that needs you to connect it with
+ * your selection was the one furthest from it. It sits beside the row now,
+ * with a gap rather than a continent.
+ *
+ * What keeps it safe is not distance, it is that it is ARMED: it does
+ * nothing until a slot is selected, it says what it will throw away in its
+ * tooltip, and it is drawn dead until then. That was always the real guard.
  *
  * It takes whatever slot is SELECTED rather than offering a drag: dragging a
  * 46px tile onto a 40px target is a dexterity test, and this is a coffee
@@ -263,7 +279,8 @@ function Bin({ armed, label, onEmpty }) {
       }
       style={{
         position: "absolute",
-        right: 16,
+        // just past the row's right edge, measured off the row itself
+        left: `calc(50% + ${ROW_W / 2 + 14}px)`,
         bottom: 16,
         width: 40,
         height: 40,
@@ -290,6 +307,30 @@ function Bin({ armed, label, onEmpty }) {
         />
       </svg>
     </button>
+  );
+}
+
+/** The hover readout. Empty means nothing is under the cursor. */
+function HoverLine() {
+  const label = useHovered();
+  return (
+    <div
+      {...uiId("hover")}
+      style={{
+        minHeight: 17,
+        font: "12px ui-monospace, monospace",
+        letterSpacing: 0.5,
+        color: "#f0e6d6",
+        background: label ? "#1b1412e6" : "transparent",
+        border: `1px solid ${label ? "#ffffff24" : "transparent"}`,
+        borderRadius: 6,
+        padding: label ? "2px 10px" : "2px 0",
+        opacity: label ? 1 : 0,
+        transition: "opacity .12s",
+      }}
+    >
+      {label ?? ""}
+    </div>
   );
 }
 
@@ -357,6 +398,12 @@ export default function Inventory({
           pointerEvents: "none",
         }}
       >
+        {/* WHAT YOU ARE POINTING AT, directly over the hotbar. It sits here
+          rather than by the cursor because a label that follows the pointer
+          is a tooltip, and a tooltip over a 3D scene covers the thing it is
+          describing. Above the row, the eye already goes there. */}
+        <HoverLine />
+
         {/* the name of whatever is in the first slot, above the row, so the
           hotbar itself stays a row of squares */}
         {bean && (

@@ -78,76 +78,56 @@ export const GROCERIES = [
   },
 ];
 
-// DRESSING. A cold store with three things in it reads as a cold store
-// somebody forgot to fill, which is the complaint the cake case also got.
-// These are not clickable and carry no tag, so they cannot be mistaken for a
-// fourth ingredient -- they are the stock behind the stock.
+// DRESSING, and there is less of it than there was because the maths said
+// so rather than because it looked busy.
 //
-// ALL BULK, for the same reason the three above are: leaving the bar's props
-// back here would have left pump bottles on two shelves and the point of the
-// change unmade. Sacks of dry goods, spare gallons, spare boxes.
+// The first pass put a second row BEHIND the stock, which is what you do
+// with small jars and cannot do with these: the shelves are 510mm deep, a
+// gallon is 143mm and a bag-in-box 158, and the stock already stands at
+// z -0.058. That leaves a four-millimetre window for a back row — so the
+// back row was not behind the stock, it was inside it, and three pairs were
+// interpenetrating by 10 to 20mm.
+//
+// So everything stands in ONE ROW at the same depth, which is also what
+// "organised" looks like on a shelf, and the only question left is whether
+// a thing fits in the gap beside the stock. The lower shelf is full with
+// its two; the others take one more each. Verified by footprint, including
+// the rotation — a 241mm sack turned 0.35rad is 280mm across, which is how
+// the first pass lost its margins.
 //
 // Positions are in fridge MODEL units (the shelves span x +-0.30, z +-0.28,
-// with shelf tops at y 0.448 and 0.828); the component converts. These items
-// are two to three times the size of the props they replace, so there are
-// six of them rather than ten and the spacing is most of the design: a
-// second row sits BEHIND the stock in z, which is the only axis with room
-// left once a 168mm gallon is standing in front.
+// with shelf tops at y 0.068, 0.448, 0.828 and 1.208); the component
+// converts. Turns are kept small for the wide items for the reason above.
 export const FRIDGE_DRESSING = [
-  // X IS CONSTRAINED, not composed: the liner is at model +-0.30 and these
-  // are 170-250mm wide, so a sack (0.143 in model units either side of its
-  // centre) cannot stand further out than 0.157 without its corner inside
-  // the fridge wall. Every x below is inside its own model's limit.
-  {
-    model: "supply-sack.glb",
-    at: [-0.15, 0.448, -0.19],
-    turn: 0.35,
-    tint: { m_sack_label: "#4a3526" },
-  },
-  {
-    model: "supply-gallon.glb",
-    at: [0.13, 0.448, -0.2],
-    turn: -0.25,
-    tint: { m_sup_fill: "#f2efe6", m_sup_label: "#cddff0" },
-  },
   {
     model: "supply-box.glb",
-    at: [-0.06, 0.828, -0.2],
-    turn: -0.15,
+    at: [0.165, 0.828, -0.03],
+    turn: 0.1,
     tint: { m_box_label: "#e7d6bd" },
   },
   {
     model: "supply-sack.glb",
-    at: [0.15, 0.828, -0.07],
-    turn: 0.6,
-    tint: { m_sack_label: "#e0d6c4" },
-  },
-  {
-    model: "supply-sack.glb",
-    at: [-0.15, 1.208, -0.1],
-    turn: -0.4,
+    at: [-0.148, 1.208, -0.03],
+    turn: 0.08,
     tint: { m_sack_label: "#4a3526" },
   },
   {
     model: "supply-gallon.glb",
-    at: [0.1, 1.208, -0.12],
+    at: [0.159, 1.208, -0.03],
     turn: 0.2,
     tint: { m_sup_fill: "#e08a24", m_sup_label: "#e8a552" },
   },
-  // THE BOTTOM SHELF, which had nothing on it at all. It is the one the
-  // door's reveal leaves fully visible, so an empty one reads as a fridge
-  // that has not been filled rather than as headroom.
   {
     model: "supply-box.glb",
-    at: [-0.14, 0.068, -0.14],
-    turn: 0.2,
+    at: [-0.182, 0.068, -0.03],
+    turn: -0.12,
     tint: { m_box_label: "#cddff0" },
   },
   {
     model: "supply-gallon.glb",
-    at: [0.12, 0.068, -0.16],
-    turn: -0.35,
-    tint: { m_sup_fill: "#3a2016", m_sup_label: "#6a4632" },
+    at: [0.125, 0.068, -0.03],
+    turn: 0.18,
+    tint: { m_sup_fill: "#f2efe6", m_sup_label: "#cddff0" },
   },
 ];
 

@@ -1,10 +1,14 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useFrame } from "@react-three/fiber";
 import { Text, useCursor, useGLTF } from "@react-three/drei";
 import { Select } from "@react-three/postprocessing";
 import * as THREE from "three";
 import { PALETTE } from "@/features/coffee/palette";
 import { swallowClicks } from "@/features/coffee/clickGate";
+import {
+  setHovered as setHoveredLabel,
+  clearHovered,
+} from "@/features/coffee/hover";
 import { POUR_COLOUR, stackOf } from "@/features/coffee/data/drinks";
 import { espressoCss, espressoBandCss } from "@/features/coffee/data/beans";
 import {
@@ -17,6 +21,7 @@ import {
   useGlassMaterial,
   useGlassRimMaterial,
   useIceMaterial,
+  useStackGlassMaterial,
 } from "@/features/coffee/cup";
 import { Contents, CupBody } from "@/features/coffee/scene/Vessel";
 import Steam from "@/features/coffee/scene/Steam";
@@ -93,24 +98,65 @@ const FRONT_Z = 0.055;
 // at 500mm it hangs off the counter edge again at one end and hits the
 // machine at the other. Depth was the axis with room in it.
 const SHAPES = { mug: MUG, tall: SERVE };
+// WHAT EACH TARGET IS CALLED, for the readout over the hotbar. Keyed off
+// the same strings the hover/outline already uses, so a control cannot be
+// hoverable without being nameable.
+const SAY = {
+  ice: "ice — from the well",
+  carton: "cold milk",
+  jug: "steamed milk",
+  water: "hot water",
+  choc: "chocolate syrup",
+  oj: "orange juice",
+  shot: "the shot you pulled",
+  stir: "the drink — click to stir it",
+  bell: "the bell — ring to serve",
+};
 const GLASS_X = -0.1;
 const SHOT_X = 0.01;
 
-// THE GLASSES GO ON THE WALL. Both stacks used to stand on the board, and
-// four transparent vessels crowded into the left third of a 420mm counter
-// read as a heap of rings — you could not tell a cup from a tall glass from
-// the drink you were building. A cafe does not keep its clean glassware on
-// the prep surface either; it keeps it on a shelf above, out of the way and
-// in plain sight. The board is for the drink.
-// y measured against the station's own camera, not guessed: the serve station's
-// focus view frames world 0.775..1.345, and at 0.32 (world 1.24) the glasses
-// standing on this shelf reached 1.39 and were cut off above the top of the
-// frame — invisible, and unclickable with them. 0.21 puts both inside it.
-// Depth keeps it clear of everything: the shelf is at z -0.34 and the riser
-// and the pour path are at -0.085 and 0.055.
-const WALL = { y: 0.21, z: -0.34, w: 0.3, d: 0.1, t: 0.014 };
-const SLOT = { mug: -0.075, tall: 0.072 }; // x along that shelf
-
+// WHERE THE VESSELS LIVE, and there is no shelf any more.
+//
+// There was one: a wooden ledge on the wall with the glasses hung under it.
+// It had to go for the same reason the cup dispenser could not stay on it —
+// the riser stands directly in front of that wall and the steam jug is
+// taller than the shelf's underside, so everything kept there was behind a
+// jug from the only angle this station is seen at. A shelf you cannot see
+// the contents of is a shelf carrying nothing.
+//
+// So the two vessels are wall fixtures instead, side by side, LEFT of the
+// riser where nothing on the counter can get in front of them. Measured
+// against the riser rather than chosen: the board ends at x -0.21, so
+// anything past that is clear.
+// z puts the bracket's back face ON the wall (the room's wall face is at
+// world -0.38, which is -0.42 in this group), rather than through it.
+//
+// TWO DISPENSERS, NOT A DISPENSER AND A RACK. The tall glass used to hang
+// upside down in a wire ring, which is how a bar keeps glass so it drains --
+// honest, and beside a loaded cup dispenser it read as the one vessel there
+// was only one of. A stack says "take one, there are more"; a single hanging
+// glass says "this is the glass".
+//
+// So it is the same fixture twice, in two lengths, which is also what a
+// self-serve corner actually has: paper cups for hot, clear cups for cold,
+// a tube of each. `top` is where the clear tube ends -- see Dispenser, which
+// stretches the one model to it.
+const DISP_MODEL = `${import.meta.env.BASE_URL}models/cup-dispenser.glb`;
+const FIX = {
+  mug: { x: -0.225, y: 0.085, z: -0.37, top: 0.195 },
+  // 27mm longer, and that is the whole difference. Four 147mm glasses at a
+  // 30mm pitch stand 209mm up from the mouth, so the tube tops out at 222
+  // and the cap at 240 -- against a frame that crops this wall at 0.39 local.
+  // (The 286mm first cut of the paper dispenser ran off the top of it. Both
+  // numbers came off a view-projection probe rather than a guess.)
+  tall: { x: -0.345, y: 0.085, z: -0.37, top: 0.222 },
+};
+// where each vessel starts its trip to the mat: the mouth of its own tube,
+// which is where the bottom one of the stack is drawn
+const HOME = {
+  mug: [FIX.mug.x, FIX.mug.y - 0.028, FIX.mug.z],
+  tall: [FIX.tall.x, FIX.tall.y - 0.028, FIX.tall.z],
+};
 // THE ICE WELL. A cafe does not keep a tub of ice on the bar; it keeps a
 // LIDDED well in the counter with a scoop in it, because ice on the counter
 // is a puddle in ten minutes and an open well is a puddle in an hour. The
@@ -429,6 +475,72 @@ function beats(t) {
   };
 }
 
+/**
+ * THE CUP DISPENSER, modelled — see .dev/blender. A clear tube with a cap
+ * on top and an opaque shroud at the bottom, screwed to the wall, with the
+ * stack visible through the tube and the lowest cup poking out under the
+ * shroud where your hand goes.
+ *
+ * The first two attempts were a loose stack on a shelf and then a wire
+ * cage, and both were a different object: a cage is something you hang cups
+ * IN, and this is a column you pull them OUT of. The shroud is the tell.
+ *
+ * THE CUPS ARE NOT IN THE MODEL. They are the same paper-cup.glb the bar
+ * serves in, instanced up the tube, so the stack shortens when you take one
+ * and the cup you pull is the cup you drink from. A dispenser modelled with
+ * its cups baked in could not do either.
+ */
+// The modelled tube runs from here to here. Both read off the GLB rather than
+// assumed, because the stretch below is computed against them.
+const TUBE_BASE = 0.05;
+const TUBE_TOP = 0.195;
+
+function Dispenser({ shape, taken, top = TUBE_TOP, material, rim = null }) {
+  const { nodes, materials } = useGLTF(DISP_MODEL);
+  const n = (shape.stack ?? 8) - (taken ? 1 : 0);
+  // ONE MODEL, TWO LENGTHS. The tube is a plain straight double-walled
+  // cylinder -- two vertex rings, nothing rounded at either end -- so scaling
+  // it along its own axis produces exactly the tube that would have been
+  // modelled, and a second GLB would only be a copy of it that could drift.
+  // The offset puts the stretched bottom back on the shroud where it started;
+  // the cap rides up by whatever the tube grew.
+  const k = (top - TUBE_BASE) / (TUBE_TOP - TUBE_BASE);
+  const lift = top - TUBE_TOP;
+  return (
+    <group>
+      <mesh
+        geometry={nodes.Disp_Tube.geometry}
+        material={materials.m_disp_clear}
+        position={[0, TUBE_BASE * (1 - k), 0]}
+        scale={[1, k, 1]}
+      />
+      <mesh
+        geometry={nodes.Disp_Cap.geometry}
+        material={materials.m_disp_body}
+        position={[0, lift, 0]}
+        castShadow
+      />
+      <mesh
+        geometry={nodes.Disp_Shroud.geometry}
+        material={materials.m_disp_body}
+        castShadow
+      />
+      <mesh
+        geometry={nodes.Disp_Bracket.geometry}
+        material={materials.m_disp_body}
+      />
+      {/* rim UP and nested, which is how a sleeve of cups is loaded. The
+          lowest sits 28mm below the shroud's mouth -- far enough to take
+          hold of, not so far it looks dropped. */}
+      {Array.from({ length: n }, (_, i) => (
+        <group key={i} position={[0, -0.028 + i * shape.nest, 0]}>
+          <CupBody shape={shape} material={material} rim={rim} />
+        </group>
+      ))}
+    </group>
+  );
+}
+
 export default function ServeStation({
   active = false,
   // THE CAMERA IS HERE, which is not the same as the station being in
@@ -519,6 +631,7 @@ export default function ServeStation({
   const cupMat = useCupMaterial();
   const glassMat = useGlassMaterial();
   const rimMat = useGlassRimMaterial();
+  const stackMat = useStackGlassMaterial();
   const iceMat = useIceMaterial();
   const mats = useMemo(
     () => ({
@@ -624,9 +737,19 @@ export default function ServeStation({
   const wandLocal = useMemo(() => toLocal(wandPose), [toLocal, wandPose]);
   const cupStart = useMemo(() => toLocal(cupFrom), [toLocal, cupFrom]);
 
-  // Which vessel is in play. Falls back to the tall glass so the rack still
-  // has something to draw before one is taken.
-  const shape = SHAPES[glass] ?? SERVE;
+  // WHICH VESSEL IS IN PLAY, LATCHED. `glass` goes null the moment you put
+  // one back, but the cup is still on screen for the ~200ms it takes to damp
+  // home — and read straight, a null would swap the paper cup for a tall
+  // glass on that first frame and fly it to the wrong fixture. So the last
+  // vessel taken stays the answer until another one is.
+  //
+  // Written during render on purpose: it is the same latch shape as poursNow
+  // in useBrewFlow, and a state update here would re-render the whole station
+  // one frame after the click for a value nothing else reads.
+  const lastGlass = useRef("tall");
+  if (glass) lastGlass.current = glass;
+  const vessel = glass ?? lastGlass.current;
+  const shape = SHAPES[vessel] ?? SERVE;
   // Everything a pour aims at moves with the rim, so it is derived from the
   // shape and cached per shape — not recomputed per frame.
   const target = useMemo(() => targetsFor(shape.top), [shape]);
@@ -703,14 +826,13 @@ export default function ServeStation({
         delta
       );
       const k = THREE.MathUtils.smoothstep(glassIn.current, 0, 1);
-      // down off the wall shelf and onto the mat, from whichever slot this
-      // one was standing in
-      const fromX = SLOT[glass] ?? SLOT.tall;
+      // off its own fixture and onto the mat, and back to the same one when
+      // you put it down. `vessel`, not `glass`: see the latch above.
+      const from = HOME[vessel] ?? HOME.tall;
       cup.current.position.set(
-        THREE.MathUtils.lerp(fromX, GLASS_X, k),
-        THREE.MathUtils.lerp(WALL.y + WALL.t / 2, TOP, k) +
-          Math.sin(k * Math.PI) * 0.03,
-        THREE.MathUtils.lerp(WALL.z, FRONT_Z, k)
+        THREE.MathUtils.lerp(from[0], GLASS_X, k),
+        THREE.MathUtils.lerp(from[1], TOP, k) + Math.sin(k * Math.PI) * 0.03,
+        THREE.MathUtils.lerp(from[2], FRONT_Z, k)
       );
       cup.current.visible = glassIn.current > 0.02;
     }
@@ -956,6 +1078,34 @@ export default function ServeStation({
   // the rack also reached the station group behind it and toggled the camera
   // back out to the overview. The shared gate is what the rest of the room
   // already uses to say "this click has been spent".
+  // WHAT THE DISPENSER OFFERS RIGHT NOW, which is not one fixed thing. The
+  // same click takes a vessel, swaps for the other one, or puts the one you
+  // are holding back — see takeGlass in useBrewFlow — and a label that only
+  // ever said "take one" would be lying two thirds of the time. It also says
+  // out loud when the click is destructive, because it always is once there
+  // is something in the cup and nothing else in this room warns you.
+  const vesselSay = (kind) => {
+    const name = kind === "mug" ? "paper cup" : "tall glass";
+    const full = pours.length > 0;
+    if (glass === kind)
+      return full
+        ? "put it back — tips the drink out"
+        : `${name} — put it back`;
+    if (glass)
+      return full
+        ? `swap to the ${name} — tips the drink out`
+        : `swap to the ${name}`;
+    return kind === "mug"
+      ? "paper cup — for something hot"
+      : "tall glass — for something iced";
+  };
+  const sayNow = (key) =>
+    key === "rack-mug"
+      ? vesselSay("mug")
+      : key === "rack-tall"
+        ? vesselSay("tall")
+        : SAY[key];
+
   const tap = (key, fn, allowed) => ({
     onClick: (e) => {
       if (!active || !allowed) return;
@@ -967,9 +1117,23 @@ export default function ServeStation({
       if (!active || !allowed) return;
       e.stopPropagation();
       setHot(key);
+      const say = sayNow(key);
+      if (say) setHoveredLabel(say);
     },
-    onPointerOut: () => setHot((h) => (h === key ? null : h)),
+    onPointerOut: () => {
+      setHot((h) => (h === key ? null : h));
+      clearHovered(sayNow(key));
+    },
   });
+
+  // A CLICK CHANGES THE LABEL WITHOUT MOVING THE POINTER. Taking the cup you
+  // are hovering turns "take one" into "put it back", and pointerover has
+  // already fired and will not fire again — so the readout would sit there
+  // describing the offer you just accepted until you moved the mouse.
+  const hotSay = hot ? sayNow(hot) : null;
+  useEffect(() => {
+    if (hotSay) setHoveredLabel(hotSay);
+  }, [hotSay]);
 
   return (
     <group position={position}>
@@ -1003,46 +1167,34 @@ export default function ServeStation({
         <meshStandardMaterial color={PALETTE.counterTop} roughness={0.7} />
       </mesh>
 
-      {/* ---- THE GLASS SHELF, on the wall above the bar. Taking a glass is
-              the first beat of the finishing stage: pouring into thin air was
-              what made the station read as a menu rather than as making a
-              drink. Two glasses, ONE of each — a stack of four transparent
-              vessels on the board was unreadable, and you only ever take
-              one. Which you take is which drink you are making, and that is
-              now a choice you make rather than one the fridge makes for
-              you: the ice moved to the well and stopped implying anything.
-              ---- */}
-      <mesh
-        position={[0, WALL.y, WALL.z]}
-        material={mats.wood}
-        castShadow
-        receiveShadow
-      >
-        <boxGeometry args={[WALL.w, WALL.t, WALL.d]} />
-      </mesh>
-      {/* two small brackets, so the shelf is fixed to something */}
-      {[-WALL.w * 0.38, WALL.w * 0.38].map((bx, i) => (
-        <mesh
-          key={i}
-          position={[bx, WALL.y - 0.019, WALL.z - 0.018]}
-          material={mats.wood}
-        >
-          <boxGeometry args={[0.012, 0.03, 0.05]} />
-        </mesh>
-      ))}
+      {/* ---- WHERE THE VESSELS HANG. Taking one is the first beat of the
+              finishing stage: pouring into thin air was what made the
+              station read as a menu rather than as making a drink. ONE of
+              each, and which you take is which drink you are making — a
+              choice you make rather than one the fridge makes for you,
+              since the ice moved to the well and stopped implying anything.
+
+              The same fixture twice, because they are the same object: a
+              tube of nested vessels you pull the bottom one out of. The
+              stack shortens by one while you are holding it, which is the
+              only thing in the room that says a vessel is IN YOUR HAND
+              rather than simply missing. ---- */}
       {Object.entries(SHAPES).map(([kind, sh]) => (
         <Select key={kind} enabled={active && hot === `rack-${kind}`}>
           <group
-            position={[SLOT[kind], WALL.y + WALL.t / 2 + sh.top, WALL.z]}
-            rotation={[Math.PI, 0, 0]}
-            visible={glass !== kind}
-            {...tap(
-              `rack-${kind}`,
-              () => onTakeGlass?.(kind),
-              canTakeGlass && glass !== kind
-            )}
+            position={[FIX[kind].x, FIX[kind].y, FIX[kind].z]}
+            {...tap(`rack-${kind}`, () => onTakeGlass?.(kind), canTakeGlass)}
           >
-            <CupBody material={glassMat} rim={rimMat} shape={sh} />
+            <Dispenser
+              shape={sh}
+              taken={glass === kind}
+              top={FIX[kind].top}
+              // the paper cup carries its own materials in the GLB; the
+              // tall one is drawn from primitives, and stacked glass is not
+              // the same material as glass with a drink in it
+              material={sh.model ? undefined : stackMat}
+              rim={sh.model ? null : rimMat}
+            />
           </group>
         </Select>
       ))}
@@ -1054,7 +1206,7 @@ export default function ServeStation({
       <Select enabled={active && hot === "stir"}>
         <group
           ref={cup}
-          position={[SLOT.tall, WALL.y, WALL.z]}
+          position={HOME.tall}
           visible={false}
           {...tap("stir", onStir, canStir)}
         >
@@ -1531,3 +1683,4 @@ useGLTF.preload(CARTON_MODEL);
 useGLTF.preload(CARAFE_MODEL);
 useGLTF.preload(SYRUP_MODEL);
 useGLTF.preload(JUICE_MODEL);
+useGLTF.preload(DISP_MODEL);

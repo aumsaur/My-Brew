@@ -1,4 +1,8 @@
 import { useMemo, useRef, useState } from "react";
+import {
+  setHovered as setHoveredLabel,
+  clearHovered,
+} from "@/features/coffee/hover";
 import { useFrame } from "@react-three/fiber";
 import { useGLTF, useCursor, Text } from "@react-three/drei";
 import { Select } from "@react-three/postprocessing";
@@ -62,10 +66,14 @@ export default function BeanBag({
         onSelect?.();
       }}
       onPointerOver={(e) => {
+        if (name) setHoveredLabel(name);
         e.stopPropagation();
         setHovered(true);
       }}
-      onPointerOut={() => setHovered(false)}
+      onPointerOut={() => {
+        setHovered(false);
+        clearHovered(name);
+      }}
     >
       {/* <Select> wraps ONLY the geometry. Keeping <Text
         font={FONT}> out of it is not

@@ -35,24 +35,48 @@ export const CUP_FLOOR = CUP.floor;
 export const CUP_FILL = CUP.fill;
 
 /**
- * The HOT CUP. Glass, not ceramic, and that is the mechanic again: the pour
- * order is told by the bands and an opaque cup has no bands. A handled glass
- * tumbler is a real cafe object and the one that can be both.
+ * The SMALL CUP: a paper takeaway espresso cup.
  *
- * Which of the two you get is decided by the fridge — see takeGlass. Ice
- * means a tall glass, no ice means this. That is how a bar works: the cup is
- * picked when the order is known, not chosen from a menu of glassware.
+ * It was a handled glass tumbler, and the reason given was the mechanic —
+ * the pour order is told by BANDS, and bands cannot be read through an
+ * opaque wall, so the hot cup was made of glass to keep them legible.
+ *
+ * That reasoning holds and the cup changed anyway, because it was solving
+ * the problem in the wrong place. A handled glass tumbler is a thing a cafe
+ * owns; a paper cup is what an espresso is actually handed over in, and the
+ * room is a self-serve corner. The bands are not lost either — they are on
+ * the receipt, spelled out in order, and the tall glass is right there for
+ * anyone who wants to watch them stack. Taking the paper cup is choosing
+ * takeaway over the view, which is a choice a person makes at a counter.
+ *
+ * THE TAPER IS THE WHOLE SILHOUETTE. A paper cup is read by the cone: 31mm
+ * across at the lip down to 22.5 at the base, which is far steeper than any
+ * glass. Everything else — the rolled rim, the printed band, no handle —
+ * hangs off that.
  */
 export const MUG = shape({
-  r: 0.038,
-  rInner: 0.034,
-  h: 0.076,
-  baseR: 0.029,
-  baseH: 0.007,
-  floorH: 0.008,
-  handle: true,
-  rim: true,
-  cube: 0.012,
+  r: 0.031, // the lip
+  rInner: 0.0225, // and the base it tapers down to
+  h: 0.064,
+  baseR: 0.0235,
+  baseH: 0.004,
+  floorH: 0.006,
+  handle: false, // paper cups do not have one, which is why sleeves exist
+  rim: true, // the rolled lip, and it is the tell at a distance
+  paper: true,
+  // MODELLED, not lofted from this record. The record still owns the
+  // NUMBERS -- the taper, the height, where the floor sits -- and the mesh
+  // was built to them in Blender, so the pour maths and the geometry
+  // cannot drift apart. What the mesh adds is what a primitive cone has no
+  // way to carry: a wall with thickness, so the lip is an edge you can see
+  // rather than a zero-width line, and a rolled bead over it.
+  model: "paper-cup.glb",
+  // how far one sits down into the one below it when they are stacked
+  nest: 0.013,
+  // and how many the dispenser is loaded with. Paper is thin, so a sleeve of
+  // eight is barely taller than three cups.
+  stack: 8,
+  cube: 0.01,
 });
 
 /**
@@ -80,6 +104,19 @@ export const SERVE = shape({
   floorH: 0.008,
   handle: false,
   rim: true,
+  // STACKABLE, because the tall vessel lives in a dispenser too — see
+  // Dispenser in scene/ServeStation.
+  //
+  // 30mm of rise per glass, which is a fifth of its height and about what a
+  // stacking tumbler gives you. The paper cup's 13mm is not available here
+  // and the reason is the taper: a paper cup goes 31mm at the lip down to
+  // 22.5 at the base, so it drops most of its length into the one below. A
+  // tumbler runs 32 down to 28.5 over 140mm — 3.5mm of taper, and almost
+  // nothing to nest into.
+  nest: 0.03,
+  // four, which is what fits under the cap at that pitch. Not a shorter
+  // stack of the same fixture: the tube was sized to the stack.
+  stack: 4,
   // cafe ice is chunky. Small cubes in a tall glass read as grit.
   cube: 0.0155,
 });
@@ -151,6 +188,39 @@ export function useGlassMaterial() {
         opacity: 0.11,
         depthWrite: false,
         side: THREE.FrontSide,
+      }),
+    []
+  );
+}
+
+/**
+ * THE SAME GLASS, STACKED IN THE DISPENSER — and it cannot be the same
+ * material, for a reason that is physical rather than cosmetic.
+ *
+ * useGlassMaterial is 0.11 and FrontSide, and both numbers were measured
+ * against ONE wall with a drink behind it: at anything higher the espresso
+ * band goes grey and the whole order-is-the-drink mechanic stops reading.
+ * None of that applies to an empty glass in a tube. What applies instead is
+ * that four nested glasses are EIGHT walls deep, seen through a tube that is
+ * itself only 0.13 alpha — and at 0.11 a side the result was nothing at all.
+ * The first build of this stack was invisible: the screenshot of four
+ * glasses and the screenshot of three were the same image.
+ *
+ * So the stack gets the opacity its wall count has earned, and DoubleSide
+ * because a glass you are looking INTO should show its far wall. No drink is
+ * ever drawn through this, so it cannot tint a single band.
+ */
+export function useStackGlassMaterial() {
+  return useMemo(
+    () =>
+      new THREE.MeshStandardMaterial({
+        color: "#d6e6ec",
+        roughness: 0.06,
+        metalness: 0.02,
+        transparent: true,
+        opacity: 0.34,
+        depthWrite: false,
+        side: THREE.DoubleSide,
       }),
     []
   );
