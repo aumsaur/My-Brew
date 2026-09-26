@@ -87,7 +87,7 @@ export default function DrinkCard({ flow, onAgain }) {
   const noCoffee = drink?.coffee === false;
   const notes = noCoffee
     ? []
-    : tasteNotes({ bean: beanData, roast, shot, burnt, pours });
+    : tasteNotes({ bean: beanData, roast, ground, shot, burnt, pours });
   const verdict = verdictFor({
     bean: beanData,
     roast,

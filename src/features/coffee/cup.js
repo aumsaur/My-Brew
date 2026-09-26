@@ -122,6 +122,36 @@ export const SERVE = shape({
 });
 
 /**
+ * WHAT ESPRESSO LOOKS LIKE, as a surface. The COLOUR is espressoCss in
+ * data/beans -- it moves with the roast and the shot length, so it cannot
+ * live in a material -- and these are everything else about it.
+ *
+ * They are here, exported, because the same shot is drawn in two places by
+ * two files: EspressoMachine pulls it into the demitasse, and ServeStation
+ * stands that same demitasse on the bar. They each built their own material
+ * and the two drifted -- 0.35 roughness and a full environment at the
+ * machine against 0.62 and a quarter of one at the bar. Same colour in,
+ * visibly different coffee out, which is the "why is it a different colour
+ * over there" that kept getting reported and kept getting answered by
+ * unifying the COLOUR, which was never the half that was broken.
+ *
+ * The bar's numbers won. Dark liquids go plasticky under this HDRI unless
+ * they are rough and mostly ignore it.
+ */
+export const ESPRESSO_SURFACE = { roughness: 0.62, envMapIntensity: 0.25 };
+
+/**
+ * And the crema on top of it, which is the other half of the same bug.
+ *
+ * The machine drew one and the bar did not, so looking into the cup at the
+ * machine showed a pale caramel lid and looking into the SAME CUP at the bar
+ * showed dark coffee. No amount of agreeing about the body colour fixes
+ * that: they were not drawing the same thing.
+ */
+export const CREMA_SURFACE = { color: "#c98d4d", roughness: 0.6 };
+export const CREMA_T = 0.003; // how thick the disc is drawn
+
+/**
  * The RIM, and only the rim.
  *
  * The wall has to stay at 0.11 or the bands stop being the colours they were

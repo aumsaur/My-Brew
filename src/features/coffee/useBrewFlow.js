@@ -15,6 +15,10 @@ export const STAGES = ["pick", "roast", "grind", "brew", "finish", "served"];
 // Roast has to clear this before the beans are grindable — under it they are
 // still green. Over BURNT_AT they are burnt: grindable, but the brew suffers.
 export const MIN_ROAST = 0.22;
+// AND THE SAME FLOOR ONE STEP LATER. Below this the beans are barely
+// cracked, so "whole bean" is still the honest label (see grindLabel) and
+// there is nothing to put in a portafilter.
+export const MIN_GRIND = 0.12;
 export const BURNT_AT = 0.85;
 
 // Pulling the shot. Same shape as the roast: a floor you must clear, a window
@@ -59,6 +63,7 @@ const NEXT_STATION = {
 function hintFor({
   stage,
   roast,
+  ground,
   burnt,
   charged,
   hopper,
@@ -95,9 +100,12 @@ function hintFor({
         ? "burnt. tip them into the grinder anyway — click the bean in your hotbar"
         : "tip the beans into the grinder — click the bean in your hotbar";
     }
-    return burnt
-      ? "burnt. grind it anyway, or pick a fresh bean"
-      : "pick the grinder up, then press and hold it";
+    if (ground < MIN_GRIND) {
+      return burnt
+        ? "burnt. grind it anyway — pick it up and hold it"
+        : "pick the grinder up, then press and hold it";
+    }
+    return "keep grinding for a finer one, or let go to brew";
   }
 
   if (stage === "brew") {
@@ -182,6 +190,7 @@ export function useBrewFlow() {
   // and reattaching sixty times a second.
   const poursNow = useRef(pours);
   poursNow.current = pours;
+
   // and the same trick for the vessel, so clicking a dispenser can ask
   // "am I already holding this one?" without rebuilding takeGlass per change
   const glassNow = useRef(glass);
@@ -227,40 +236,69 @@ export function useBrewFlow() {
 
   // held-button progress; the station calls these each frame while running
   const addRoast = useCallback((d) => setRoast((r) => Math.min(1, r + d)), []);
-  const addGrind = useCallback(
-    (d) =>
-      setGround((g) => {
-        const next = Math.min(1, g + d);
-        // the drum emptied when the roast came off (see releaseRoast); the
-        // hopper empties here, because the grounds are what comes next and
-        // they are in the portafilter's hands now, not the grinder's
-        if (next >= 1) {
-          setStage("brew");
-          setHopper(false);
-        }
-        return next;
-      }),
-    []
-  );
+  const addGrind = useCallback((d) => setGround((g) => Math.min(1, g + d)), []);
 
-  // called on button release, not each frame: you choose when to stop roasting,
-  // which is the whole interaction
+  /**
+   * LETTING GO IS THE DECISION, at all three held knobs -- and all three read
+   * how far you got through their own setState updater rather than through a
+   * captured variable.
+   *
+   * That is not a style choice. The scene lives inside the R3F canvas, which
+   * is a separate React root, and its props can lag: releaseGrind was being
+   * called with ground=0 while the HUD outside the canvas drew 85%, so the
+   * release never cleared its floor and the grind stage never ended. A ref
+   * written during render did not fix it either -- the render doing the
+   * writing is one React discards. An updater is the one thing React
+   * guarantees receives the committed value, whoever calls it and however
+   * old their copy of this object is.
+   *
+   * Each updater returns its value unchanged. It is being used to READ.
+   *
+   * Idempotent, because both the prop's pointerup and the window-level net in
+   * CoffeeRoom fire for one release, and an updater may run twice besides.
+   */
+  const finishRoast = useCallback(() => {
+    // AND THE BEANS COME OUT WITH YOU. Stopping the roast is taking the batch
+    // off -- you tip the drum into your hands and carry it to the grinder.
+    setCharged(false);
+    setStage((s) => (s === "roast" ? "grind" : s));
+  }, []);
+  const finishGrind = useCallback(() => {
+    // the hopper empties for the same reason the drum does: the grounds are
+    // in the portafilter's hands now, not the grinder's
+    setHopper(false);
+    setStage((s) => (s === "grind" ? "brew" : s));
+  }, []);
   const releaseRoast = useCallback(() => {
-    setStage((s) => {
-      if (s !== "roast" || roast < MIN_ROAST) return s;
-      // AND THE BEANS COME OUT WITH YOU. Stopping the roast is taking the
-      // batch off — you tip the drum into your hands and carry it to the
-      // grinder. Leaving `charged` true until the grind finished meant you
-      // walked away from a roaster that still had your beans in it, which
-      // is the same complaint as the drum filling itself from the shelf,
-      // one step later: a station showing a step it is no longer doing.
-      //
-      // Idempotent, so it is safe in an updater React may run twice — the
-      // note on the landing effect below is about APPENDING, which is not.
-      setCharged(false);
-      return "grind";
+    setRoast((r) => {
+      if (r >= MIN_ROAST) finishRoast();
+      return r; // unchanged: this updater is being used to READ
     });
-  }, [roast]);
+  }, [finishRoast]);
+
+  /**
+   * STOP GRINDING, and the grind you stop at is the grind you get.
+   *
+   * It used to run to 100% or not count: addGrind advanced the stage when
+   * `ground` hit 1, so letting go early left the beans half ground with no
+   * way forward but to keep cranking to the end. The fineness ladder was
+   * right there on the meter -- coarse, medium, fine, espresso -- naming a
+   * choice nobody was allowed to make.
+   *
+   * Now it is the roast's gesture exactly: hold, watch the ladder, let go
+   * where you want it. Same floor (MIN_GRIND), same place the hopper empties
+   * -- the grounds leave with you, because what comes next is a portafilter,
+   * not a grinder with your coffee still in it.
+   *
+   * Idempotent: the window-level safety net in CoffeeRoom fires this as well
+   * as the prop does, and both can land for one release.
+   */
+  const releaseGrind = useCallback(() => {
+    setGround((g) => {
+      if (g >= MIN_GRIND) finishGrind();
+      return g;
+    });
+  }, [finishGrind]);
 
   // TIPPING THE BAG IN. The roaster's own two beats: the bean is in your
   // hands until you put it in the drum, and only then will the button run.
@@ -275,8 +313,11 @@ export function useBrewFlow() {
 
   // on release, like the roast: when you stop IS the decision
   const pullShot = useCallback(() => {
-    setStage((s) => (s === "brew" && shot >= SHOT_MIN ? "finish" : s));
-  }, [shot]);
+    setShot((v) => {
+      if (v >= SHOT_MIN) setStage((s) => (s === "brew" ? "finish" : s));
+      return v;
+    });
+  }, []);
 
   // Sequences. Steaming is not a progress bar: you either steamed the milk or
   // you did not, and the interesting part is watching the wand do it. Serving
@@ -525,6 +566,7 @@ export function useBrewFlow() {
       hint: hintFor({
         stage,
         roast,
+        ground,
         burnt,
         charged,
         hopper,
@@ -543,6 +585,7 @@ export function useBrewFlow() {
       addRoast,
       addGrind,
       releaseRoast,
+      releaseGrind,
       lockPortafilter,
       addShot,
       pullShot,
@@ -580,6 +623,7 @@ export function useBrewFlow() {
     addRoast,
     addGrind,
     releaseRoast,
+    releaseGrind,
     lockPortafilter,
     addShot,
     pullShot,

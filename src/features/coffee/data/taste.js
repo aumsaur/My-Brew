@@ -90,6 +90,7 @@ const BAND_PHRASE = {
 export function tasteNotes({
   bean,
   roast = 0,
+  ground = 0,
   shot = 0,
   burnt = false,
   pours = [],
@@ -145,6 +146,25 @@ export function tasteNotes({
   } else {
     out.push(
       `Extraction landed in the window, so the ${o.body} body is intact and the finish is clean.`
+    );
+  }
+
+  // 2b — THE GRIND, which is a choice now rather than a loading bar: you let
+  // go of the crank where you want it (see releaseGrind). Grind is the other
+  // half of extraction and it pulls against the shot -- coarse runs fast and
+  // thin however long you hold the button, fine runs slow and thick -- so
+  // this reads the two together rather than grading the grind on its own.
+  if (ground < 0.25) {
+    out.push(
+      shot > SHOT_GOOD[1]
+        ? "Ground coarse and then pulled long through it: the water went straight past the grounds and what is in the cup is mostly water that has met coffee."
+        : "Ground coarse, so the water had an easy time of it. Thin in the body and quick to finish, whatever the shot clock said."
+    );
+  } else if (ground > 0.75) {
+    out.push(
+      shot < 0.25
+        ? "Ground to espresso fineness and cut short — this is as concentrated as the room gets, and it is nearly a syrup."
+        : "Ground fine, so the water had to fight through it. Heavy body and a long finish, and it takes any harshness in the roast with it."
     );
   }
 

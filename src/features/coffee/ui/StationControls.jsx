@@ -21,6 +21,22 @@ import { uiId } from "@/features/coffee/ids";
 // is the signpost, which is also navigation, so filling this one puts the
 // two ways of moving in the same colour. The esc key is printed on the
 // button rather than whispered under it, because a keycap IS the label.
+//
+// AND THEN IT MOVED, because loud was not the problem. Reported a second
+// time, unchanged: "button to go back still not noticeable". Making it
+// louder a third time is the same move a third time, so this pass changed
+// WHERE it is instead.
+//
+// It was bottom-left. Nothing else lives in that corner and nothing sends
+// you there: arriving at a station, the eye goes to the middle of the screen
+// where the prop is and then to the panel above it, which is the thing that
+// says what the station does. The bottom-left corner is the one region a
+// player has no reason to look at in the entire session.
+//
+// Top-right puts it in that same band, next to the panel that is already
+// being read, and in the corner every other application on the machine puts
+// the way out of something. It is the same button; it is standing where
+// people look.
 const FILL = "#e0a05e";
 
 export default function StationControls({
@@ -49,8 +65,8 @@ export default function StationControls({
       onMouseLeave={() => setHover(false)}
       style={{
         position: "absolute",
-        left: 16,
-        bottom: 16,
+        right: 16,
+        top: 16,
         display: "flex",
         alignItems: "center",
         gap: 10,

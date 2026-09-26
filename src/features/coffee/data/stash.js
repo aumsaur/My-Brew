@@ -98,36 +98,59 @@ export const GROCERIES = [
 // Positions are in fridge MODEL units (the shelves span x +-0.30, z +-0.28,
 // with shelf tops at y 0.068, 0.448, 0.828 and 1.208); the component
 // converts. Turns are kept small for the wide items for the reason above.
+// IT IS ALL UNOPENED KRAFT, and that is the whole point of the palette.
+//
+// The dressing used to be tinted like the stock, and one entry was tinted
+// IDENTICALLY to it: an orange gallon at #e08a24 standing on a shelf beside
+// the orange juice gallon at #e08a24, one of them a control and one of them
+// scenery, with nothing whatsoever to tell them apart until you put the
+// cursor on it. "Hard to tell which can be clicked" is the mildest possible
+// way of reporting that.
+//
+// So the rule is the one a real cold store follows. What is OPEN and in use
+// is labelled and coloured -- you can see what is in it through the fill, and
+// that is the three in GROCERIES. What is still in its packaging is brown
+// board and plain sacking, because nobody prints a label for the inside of a
+// fridge. Interactive is the exception here, and the exception is the thing
+// that is allowed to have colour.
+//
+// The hover outline still does its job once you are pointing; this is about
+// knowing where to point in the first place.
+const KRAFT = "#a98a63"; // board
+const KRAFT_DARK = "#8a6c4a"; // printing on board
+const SACKING = "#b9a684";
+
 export const FRIDGE_DRESSING = [
   {
     model: "supply-box.glb",
     at: [0.165, 0.828, -0.03],
     turn: 0.1,
-    tint: { m_box_label: "#e7d6bd" },
+    tint: { m_box_label: KRAFT },
   },
   {
     model: "supply-sack.glb",
     at: [-0.148, 1.208, -0.03],
     turn: 0.08,
-    tint: { m_sack_label: "#4a3526" },
+    tint: { m_sack_label: SACKING },
   },
   {
     model: "supply-gallon.glb",
     at: [0.159, 1.208, -0.03],
     turn: 0.2,
-    tint: { m_sup_fill: "#e08a24", m_sup_label: "#e8a552" },
+    // an unopened gallon: the fill is not showing through a printed drum
+    tint: { m_sup_fill: KRAFT_DARK, m_sup_label: KRAFT },
   },
   {
     model: "supply-box.glb",
     at: [-0.182, 0.068, -0.03],
     turn: -0.12,
-    tint: { m_box_label: "#cddff0" },
+    tint: { m_box_label: KRAFT_DARK },
   },
   {
     model: "supply-gallon.glb",
     at: [0.125, 0.068, -0.03],
     turn: 0.18,
-    tint: { m_sup_fill: "#f2efe6", m_sup_label: "#cddff0" },
+    tint: { m_sup_fill: KRAFT, m_sup_label: KRAFT_DARK },
   },
 ];
 

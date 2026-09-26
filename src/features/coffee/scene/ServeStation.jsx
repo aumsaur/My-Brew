@@ -22,6 +22,9 @@ import {
   useGlassRimMaterial,
   useIceMaterial,
   useStackGlassMaterial,
+  ESPRESSO_SURFACE,
+  CREMA_SURFACE,
+  CREMA_T,
 } from "@/features/coffee/cup";
 import { Contents, CupBody } from "@/features/coffee/scene/Vessel";
 import Steam from "@/features/coffee/scene/Steam";
@@ -578,6 +581,7 @@ export default function ServeStation({
   const jug = useRef();
   const carton = useRef();
   const shotCup = useRef();
+  const shotCrema = useRef();
   const carafe = useRef();
   const syrup = useRef();
   const juice = useRef();
@@ -652,10 +656,9 @@ export default function ServeStation({
       // band colour, mixed dark on purpose to survive the serving glass --
       // and applied it to an opaque cup, so the shot you carried from the
       // machine visibly darkened on the walk over. See espressoCss.
-      shot: new THREE.MeshStandardMaterial({
-        roughness: 0.62,
-        envMapIntensity: 0.25,
-      }),
+      // see ESPRESSO_SURFACE -- the machine draws this same cup
+      shot: new THREE.MeshStandardMaterial({ ...ESPRESSO_SURFACE }),
+      crema: new THREE.MeshStandardMaterial({ ...CREMA_SURFACE }),
       foam: new THREE.MeshStandardMaterial({ color: FOAM, roughness: 0.95 }),
       steam: new THREE.MeshStandardMaterial({
         color: "#ffffff",
@@ -957,13 +960,19 @@ export default function ServeStation({
     // ---- what is left in each source, draining as it runs ----
     const left = (vessel, gone) =>
       gone ? 0 : now && pv === vessel ? 1 - flowing.flow : 1;
-    const level = (ref, vessel, gone, base, height) => {
+    const level = (ref, vessel, gone, base, height, cap = null) => {
       if (!ref.current) return;
       const l = left(vessel, gone);
       ref.current.visible = l > 0.02;
       const s = Math.max(0.02, l);
       ref.current.scale.y = s;
       ref.current.position.y = base + (height * s) / 2;
+      // anything that floats ON the liquid rather than being some of it --
+      // just the crema so far. It rides the surface down as the cup empties.
+      if (cap?.current) {
+        cap.current.visible = ref.current.visible;
+        cap.current.position.y = base + height * s;
+      }
     };
     level(milkLvl, "jug", jugEmpty, 0.008, MILK_LEVEL);
     level(waterLvl, "water", pours.includes("water"), 0.008, WATER_LEVEL);
@@ -979,7 +988,8 @@ export default function ServeStation({
       "espresso",
       pours.includes("espresso"),
       CUP_FLOOR,
-      shotLevel(shot)
+      shotLevel(shot),
+      shotCrema
     );
 
     // ---- steam plume, only once the jug has actually arrived ----
@@ -1289,6 +1299,16 @@ export default function ServeStation({
                   shotLevel(shot),
                   14,
                 ]}
+              />
+            </mesh>
+            {/* THE CREMA, which the machine has always drawn and this cup
+                never did. It is the same cup: you pull the shot, look into
+                it and see pale caramel, then carry it three feet and look
+                into it again and see dark coffee. Nobody was ever going to
+                read that as one drink. */}
+            <mesh ref={shotCrema} material={mats.crema}>
+              <cylinderGeometry
+                args={[CUP.rInner * 0.97, CUP.rInner * 0.97, CREMA_T, 14]}
               />
             </mesh>
           </group>

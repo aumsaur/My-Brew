@@ -29,7 +29,14 @@ export const LAYOUT = {
     scale: 0.58,
     model: { c: [0.0, 0.4, 0.0669], size: [0.52, 0.8, 0.6939] },
     foot: { c: [0.0, 0.01], r: 0.29 },
-    view: [0.1, 0.34, 1],
+    // RAISED FROM 0.34, which is 19 degrees above the cup and not enough to
+    // see into it. The demitasse is 88mm tall with its surface 41mm under
+    // the rim at a half-full shot, and the near wall hides everything below
+    // about 22 degrees -- so the shot was invisible for the first half of
+    // every pull and then appeared all at once, which is what "it suddenly
+    // fills" was. 0.42 is 23 degrees. Deliberately the smallest number that
+    // clears it: this is the framing of the hero prop in the room.
+    view: [0.1, 0.42, 1],
     fit: 1.45,
     inspect: { view: [0.05, 0.22, 1], fit: 0.95 },
   },

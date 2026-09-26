@@ -107,6 +107,7 @@ export default function CoffeeRoom({
     if (!holding) return undefined;
     const stop = () => {
       if (holding === "roast") flow.releaseRoast(); // no-op if already released
+      if (holding === "grind") flow.releaseGrind(); // ditto -- see releaseGrind
       if (holding === "pull") flow.pullShot();
       setHolding(null);
       swallowClicks();
@@ -256,6 +257,10 @@ export default function CoffeeRoom({
           else setHolding("grind");
         }}
         onPointerUp={() => {
+          // WHERE YOU LET GO IS THE GRIND, same as the roaster above. Both
+          // this and the window-level net call it, because a pointerup that
+          // happens off the canvas never reaches here.
+          if (holding === "grind") flow.releaseGrind();
           setHolding(null);
           // swallow the click that follows, either way: on the pickup press it
           // would toggle focus straight back off and put the grinder down

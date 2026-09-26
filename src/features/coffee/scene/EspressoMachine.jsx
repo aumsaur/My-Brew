@@ -5,6 +5,11 @@ import { Select } from "@react-three/postprocessing";
 import Steam from "@/features/coffee/scene/Steam";
 import * as THREE from "three";
 import { espressoCss } from "@/features/coffee/data/beans";
+import {
+  ESPRESSO_SURFACE,
+  CREMA_SURFACE,
+  CREMA_T,
+} from "@/features/coffee/cup";
 
 // Everything painted on a thing in this room is LETTERED in the same hand;
 // see scene/WallSign. A mix of faces reads as accidental.
@@ -97,7 +102,7 @@ export default function EspressoMachine({
   // cloned so tinting the crema never reaches another instance through drei's
   // shared material cache — the hazard BeanBag hit with its label
   const brewMat = useMemo(
-    () => new THREE.MeshStandardMaterial({ roughness: 0.35 }),
+    () => new THREE.MeshStandardMaterial({ ...ESPRESSO_SURFACE }),
     []
   );
   // THE SHOT IS THE COLOUR OF THE BEAN YOU ROASTED. It was a constant, so a
@@ -115,7 +120,7 @@ export default function EspressoMachine({
   }, [roast, shot]);
   brewMat.color.set(ink);
   const cremaMat = useMemo(
-    () => new THREE.MeshStandardMaterial({ color: "#c98d4d", roughness: 0.6 }),
+    () => new THREE.MeshStandardMaterial({ ...CREMA_SURFACE }),
     []
   );
   const cupMat = useMemo(
@@ -339,7 +344,7 @@ export default function EspressoMachine({
                 material={cremaMat}
               >
                 <cylinderGeometry
-                  args={[CUP.rInner * 0.97, CUP.rInner * 0.97, 0.003, 14]}
+                  args={[CUP.rInner * 0.97, CUP.rInner * 0.97, CREMA_T, 14]}
                 />
               </mesh>
             </>
